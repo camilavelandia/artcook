@@ -1,3 +1,5 @@
+// clase modificada camila-juan
+
 package co.edu.unbosque.artcook.entity;
 
 import java.time.LocalDateTime;
