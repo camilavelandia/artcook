@@ -1,3 +1,5 @@
+//clase agregada por camila
+
 package co.edu.unbosque.artcook.dto;
 
 import java.util.Objects;
