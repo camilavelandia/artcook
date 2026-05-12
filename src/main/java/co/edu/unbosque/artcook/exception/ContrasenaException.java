@@ -1,3 +1,5 @@
+// clase modificada camila-juan
+
 package co.edu.unbosque.artcook.exception;
 
 public class ContrasenaException extends Exception {
