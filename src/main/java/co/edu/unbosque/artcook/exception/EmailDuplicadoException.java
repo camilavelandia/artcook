@@ -1,14 +1,16 @@
 package co.edu.unbosque.artcook.exception;
 
-public class EmailDuplicadoException extends Exception {
-	
-	private static final long serialVersionUID = 1L;
-	
-	public EmailDuplicadoException() {
-		super("El email ya está registrado");
-	}
-	
-	public EmailDuplicadoException(String mensaje) {
-		super(mensaje);
-	}
+/**
+ * Excepción cuando el usuario intenta acceder sin haber verificado su correo.
+ */
+public class EmailNoVerificadoException extends Exception {
+    private static final long serialVersionUID = 1L;
+
+    public EmailNoVerificadoException() {
+        super("Debe verificar su correo electronico antes de continuar.");
+    }
+
+    public EmailNoVerificadoException(String mensaje) {
+        super(mensaje);
+    }
 }
