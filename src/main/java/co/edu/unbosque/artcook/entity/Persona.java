@@ -1,87 +1,72 @@
-// clase modificada camila-juan
 package co.edu.unbosque.artcook.entity;
 
 import java.util.Objects;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.MappedSuperclass;
 
+/**
+ * Clase base para las personas del sistema.
+ * Contiene información común como nombre, email y contraseña.
+ * El ID se define aquí para que sea heredado por las subclases.
+ */
 @MappedSuperclass
 public abstract class Persona {
 
-	private @Id @GeneratedValue(strategy = GenerationType.IDENTITY) long id;
-	private String nombre;
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private long id;
 
-	@Column(unique = true)
-	private String email;
+    private String nombre;
 
-	private String contrasena;
+    @Column(unique = true)
+    private String email;
 
-	public Persona() {
-	}
+    private String contrasena;
 
-	public Persona(String nombre, String email, String contrasena) {
-		super();
-		this.nombre = nombre;
-		this.email = email;
-		this.contrasena = contrasena;
-	}
+    public Persona() {
+    }
 
-	public long getId() {
-		return id;
-	}
+    /**
+     * Crea una persona con nombre, email y contraseña.
+     *
+     * @param nombre     nombre completo
+     * @param email      correo electrónico
+     * @param contrasena contraseña del usuario
+     */
+    public Persona(String nombre, String email, String contrasena) {
+        this.nombre = nombre;
+        this.email = email;
+        this.contrasena = contrasena;
+    }
 
-	public void setId(long id) {
-		this.id = id;
-	}
+    public long getId() { return id; }
+    public void setId(long id) { this.id = id; }
+    public String getNombre() { return nombre; }
+    public void setNombre(String nombre) { this.nombre = nombre; }
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+    public String getContrasena() { return contrasena; }
+    public void setContrasena(String contrasena) { this.contrasena = contrasena; }
 
-	public String getNombre() {
-		return nombre;
-	}
+    @Override
+    public int hashCode() {
+        return Objects.hash(id, nombre, email, contrasena);
+    }
 
-	public void setNombre(String nombre) {
-		this.nombre = nombre;
-	}
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (obj == null) return false;
+        if (getClass() != obj.getClass()) return false;
+        Persona other = (Persona) obj;
+        return id == other.id && Objects.equals(email, other.email);
+    }
 
-	public String getEmail() {
-		return email;
-	}
-
-	public void setEmail(String email) {
-		this.email = email;
-	}
-
-	public String getContrasena() {
-		return contrasena;
-	}
-
-	public void setContrasena(String contrasena) {
-		this.contrasena = contrasena;
-	}
-
-	@Override
-	public int hashCode() {
-		return Objects.hash(contrasena, email, id, nombre);
-	}
-
-	@Override
-	public boolean equals(Object obj) {
-		if (this == obj)
-			return true;
-		if (obj == null)
-			return false;
-		if (getClass() != obj.getClass())
-			return false;
-		Persona other = (Persona) obj;
-		return Objects.equals(contrasena, other.contrasena) && Objects.equals(email, other.email)
-				&& id == other.id && Objects.equals(nombre, other.nombre);
-	}
-
-	@Override
-	public String toString() {
-		return "Persona [id=" + id + ", nombre=" + nombre + ", email=" + email + ", contrasena=" + contrasena + "]";
-	}
+    @Override
+    public String toString() {
+        return "Persona [id=" + id + ", nombre=" + nombre + ", email=" + email + "]";
+    }
 }
