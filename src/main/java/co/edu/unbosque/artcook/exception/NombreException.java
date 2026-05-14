@@ -1,14 +1,16 @@
 package co.edu.unbosque.artcook.exception;
 
-public class NombreException extends Exception {
-	
-	private static final long serialVersionUID = 1L;
-	
-	public NombreException() {
-		super("El nombre es inválido");
-	}
-	
-	public NombreException(String mensaje) {
-		super(mensaje);
-	}
+/**
+ * Excepción cuando el prompt para generar la receta está vacío o es muy corto.
+ */
+public class PromptVacioException extends Exception {
+    private static final long serialVersionUID = 1L;
+
+    public PromptVacioException() {
+        super("El prompt no puede estar vacio. Describe la receta o manualidad que deseas generar.");
+    }
+
+    public PromptVacioException(String mensaje) {
+        super(mensaje);
+    }
 }
