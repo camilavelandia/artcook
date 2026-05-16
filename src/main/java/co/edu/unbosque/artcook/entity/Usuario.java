@@ -1,20 +1,26 @@
 package co.edu.unbosque.artcook.entity;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.List;
 import java.util.Objects;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
 
 /**
  * Representa la entidad usuario en la base de datos.
- * Extiende Persona e incluye rol, verificación de correo, tokens y auditoría de acceso.
+ * Extiende Persona e implementa UserDetails de Spring Security
+ * para integrarse con el sistema de autenticación JWT.
  */
 @Entity
 @Table(name = "usuarios")
-public class Usuario extends Persona {
+public class Usuario extends Persona implements UserDetails {
 
     @Enumerated(EnumType.STRING)
     private RolUsuario rol;
@@ -52,6 +58,79 @@ public class Usuario extends Persona {
         this.activo = true;
         this.emailVerificado = false;
         this.fechaCreacion = LocalDateTime.now();
+    }
+
+    /**
+     * Retorna las autoridades del usuario según su rol.
+     * Spring Security usa este método para la autorización.
+     *
+     * @return colección de autoridades del usuario
+     */
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return List.of(new SimpleGrantedAuthority("ROLE_" + rol.name()));
+    }
+
+    /**
+     * Retorna la contraseña del usuario para Spring Security.
+     *
+     * @return contraseña del usuario
+     */
+    @Override
+    public String getPassword() {
+        return getContrasena();
+    }
+
+    /**
+     * Retorna el email como identificador único del usuario para Spring Security.
+     *
+     * @return email del usuario
+     */
+    @Override
+    public String getUsername() {
+        return getEmail();
+    }
+
+    /**
+     * Indica si la cuenta del usuario no ha expirado.
+     *
+     * @return siempre true ya que no manejamos expiración de cuenta
+     */
+    @Override
+    public boolean isAccountNonExpired() {
+        return true;
+    }
+
+    /**
+     * Indica si la cuenta del usuario no está bloqueada.
+     * Retorna true solo si el usuario está activo.
+     *
+     * @return true si el usuario está activo, false si está desactivado
+     */
+    @Override
+    public boolean isAccountNonLocked() {
+        return activo;
+    }
+
+    /**
+     * Indica si las credenciales del usuario no han expirado.
+     *
+     * @return siempre true ya que no manejamos expiración de credenciales
+     */
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
+    }
+
+    /**
+     * Indica si el usuario está habilitado en el sistema.
+     * Retorna true solo si el usuario está activo y tiene el email verificado.
+     *
+     * @return true si el usuario está activo y verificado
+     */
+    @Override
+    public boolean isEnabled() {
+        return activo && emailVerificado;
     }
 
     public RolUsuario getRol() { return rol; }
