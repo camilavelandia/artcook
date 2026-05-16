@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import co.edu.unbosque.artcook.dto.LoginResponseDTO;
@@ -31,6 +32,7 @@ import co.edu.unbosque.artcook.repository.UsuarioRepository;
 /**
  * Servicio que gestiona las operaciones CRUD y lógica de negocio de los usuarios.
  * Incluye registro, login, verificación de correo, recuperación de contraseña y administración.
+ * Las contraseñas se almacenan cifradas con BCrypt.
  */
 @Service
 public class UsuarioService implements CRUDOperation<UsuarioDTO> {
@@ -45,6 +47,13 @@ public class UsuarioService implements CRUDOperation<UsuarioDTO> {
     private CorreoService correoService;
 
     /**
+     * PasswordEncoder inyectado para cifrar contraseñas con BCrypt.
+     * Se integra con Spring Security.
+     */
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    /**
      * Constructor por defecto.
      */
     public UsuarioService() {
@@ -52,7 +61,7 @@ public class UsuarioService implements CRUDOperation<UsuarioDTO> {
 
     /**
      * Registra un nuevo usuario en el sistema.
-     * Valida los datos, genera el token de verificación y envía el correo.
+     * Valida los datos, cifra la contraseña, genera el token de verificación y envía el correo.
      *
      * @param data datos del usuario a registrar
      * @return código de estado: 0 éxito, otro número indica tipo de error
@@ -68,7 +77,8 @@ public class UsuarioService implements CRUDOperation<UsuarioDTO> {
             Usuario nuevo = new Usuario(
                 data.getNombre(),
                 data.getEmail(),
-                data.getContrasena(),
+                // CIFRADO: la contraseña se hashea con BCrypt antes de guardar
+                passwordEncoder.encode(data.getContrasena()),
                 RolUsuario.valueOf(data.getRol() != null ? data.getRol().name() : RolUsuarioDTO.USER.name())
             );
 
@@ -175,9 +185,10 @@ public class UsuarioService implements CRUDOperation<UsuarioDTO> {
 
     /**
      * Autentica un usuario y retorna sus datos para la sesión.
+     * Usa BCrypt para comparar la contraseña ingresada con la almacenada.
      *
      * @param email      correo electrónico
-     * @param contrasena contraseña
+     * @param contrasena contraseña en texto plano
      * @return LoginResponseDTO con los datos del usuario autenticado
      * @throws EmailFormatoException          si el formato del email es inválido
      * @throws CredencialesInvalidasException si las credenciales son incorrectas
@@ -189,11 +200,17 @@ public class UsuarioService implements CRUDOperation<UsuarioDTO> {
             EmailNoVerificadoException, UsuarioInactivoException {
 
         LanzadorExcepciones.verificarFormatoEmail(email);
-        Optional<Usuario> opt = usuarioRepo.findByEmailAndContrasena(email, contrasena);
-        LanzadorExcepciones.verificarCredenciales(opt.isPresent());
+
+        Optional<Usuario> opt = usuarioRepo.findByEmail(email);
+        // CIFRADO: se compara la contraseña en texto plano con el hash BCrypt almacenado
+        if (opt.isEmpty() || !passwordEncoder.matches(contrasena, opt.get().getContrasena())) {
+            throw new CredencialesInvalidasException();
+        }
+
         Usuario usuario = opt.get();
         LanzadorExcepciones.verificarEmailVerificado(usuario.isEmailVerificado());
         LanzadorExcepciones.verificarUsuarioActivo(usuario.isActivo());
+
         usuario.setUltimoAcceso(LocalDateTime.now());
         usuarioRepo.save(usuario);
 
@@ -232,15 +249,16 @@ public class UsuarioService implements CRUDOperation<UsuarioDTO> {
      *
      * @param email correo electrónico del usuario
      * @return DTO del usuario
-     * @throws EmailFormatoException          si el formato del email es inválido
-     * @throws RegistroNoEncontradoException  si el usuario no existe
+     * @throws EmailFormatoException         si el formato del email es inválido
+     * @throws RegistroNoEncontradoException si el usuario no existe
      */
     public UsuarioDTO obtenerPorEmail(String email)
             throws EmailFormatoException, RegistroNoEncontradoException {
         LanzadorExcepciones.verificarFormatoEmail(email);
         return usuarioRepo.findByEmail(email)
                 .map(u -> mapper.map(u, UsuarioDTO.class))
-                .orElseThrow(() -> new RegistroNoEncontradoException("Usuario con email " + email + " no encontrado."));
+                .orElseThrow(() -> new RegistroNoEncontradoException(
+                        "Usuario con email " + email + " no encontrado."));
     }
 
     /**
@@ -320,9 +338,10 @@ public class UsuarioService implements CRUDOperation<UsuarioDTO> {
 
     /**
      * Cambia la contraseña del usuario usando el token de recuperación.
+     * La nueva contraseña se cifra con BCrypt antes de guardar.
      *
-     * @param token          token de recuperación
-     * @param nuevaContrasena nueva contraseña a establecer
+     * @param token           token de recuperación
+     * @param nuevaContrasena nueva contraseña en texto plano
      * @return 0 éxito, 1 token inválido, 2 token vacío, 3 contraseña inválida, 4 error inesperado
      */
     public int cambiarContrasena(String token, String nuevaContrasena) {
@@ -332,7 +351,8 @@ public class UsuarioService implements CRUDOperation<UsuarioDTO> {
             if (!opt.isPresent()) return 1;
             LanzadorExcepciones.verificarContrasena(nuevaContrasena);
             Usuario usuario = opt.get();
-            usuario.setContrasena(nuevaContrasena);
+            // CIFRADO: la nueva contraseña se hashea con BCrypt antes de guardar
+            usuario.setContrasena(passwordEncoder.encode(nuevaContrasena));
             usuario.setTokenRecuperacion(null);
             usuario.setFechaActualizacion(LocalDateTime.now());
             usuarioRepo.save(usuario);
