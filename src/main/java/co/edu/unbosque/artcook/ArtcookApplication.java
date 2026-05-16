@@ -30,15 +30,4 @@ public class ArtcookApplication {
     public ModelMapper getModelMapper() {
         return new ModelMapper();
     }
-
-	/**
- * Crea y retorna una instancia de BCryptPasswordEncoder para el cifrado seguro de contraseñas.
- * Utiliza el algoritmo BCrypt con un valor aleatorio (salt) integrado para cada hashing.
- *
- * @return instancia de PasswordEncoder configurada con BCrypt
- */
-	@Bean
-	public BCryptPasswordEncoder passwordEncoder() {
-		return new BCryptPasswordEncoder();
-	}
 }
