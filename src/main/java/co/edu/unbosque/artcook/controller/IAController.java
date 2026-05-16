@@ -1,5 +1,3 @@
-// nueva clase creada, manejo de ias
-
 package co.edu.unbosque.artcook.controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
