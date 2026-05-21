@@ -6,6 +6,7 @@ import co.edu.unbosque.artcook.repository.UsuarioRepository;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,6 +23,18 @@ public class LoadDatabase {
     /** Logger para registrar mensajes durante la carga de datos iniciales. */
     private static final Logger log = LoggerFactory.getLogger(LoadDatabase.class);
 
+    @Value("${admin.email}")
+    private String adminEmail;
+
+    @Value("${admin.password}")
+    private String adminPassword;
+
+    @Value("${user.email}")
+    private String userEmail;
+
+    @Value("${user.password}")
+    private String userPassword;
+
     /**
      * Inicializa la base de datos con el usuario administrador predeterminado.
      * Solo crea el usuario si no existe previamente para evitar duplicados.
@@ -34,36 +47,36 @@ public class LoadDatabase {
     CommandLineRunner initDatabase(UsuarioRepository usuarioRepo, PasswordEncoder passwordEncoder) {
         return args -> {
 
-            Optional<Usuario> adminExistente = usuarioRepo.findByEmail("admin@artcook.com");
+            Optional<Usuario> adminExistente = usuarioRepo.findByEmail(adminEmail);
             if (adminExistente.isPresent()) {
                 log.info("El administrador ya existe, omitiendo creacion...");
             } else {
                 Usuario admin = new Usuario(
                         "Administrador ArtCook",
-                        "admin@artcook.com",
-                        passwordEncoder.encode("Admin123!"),
+                        adminEmail,
+                        passwordEncoder.encode(adminPassword),
                         RolUsuario.ADMIN
                 );
                 admin.setEmailVerificado(true);
                 admin.setActivo(true);
                 usuarioRepo.save(admin);
-                log.info("Administrador creado: admin@artcook.com / Admin123!");
+                log.info("Administrador creado: {}", adminEmail);
             }
 
-            Optional<Usuario> userExistente = usuarioRepo.findByEmail("usuario@artcook.com");
+            Optional<Usuario> userExistente = usuarioRepo.findByEmail(userEmail);
             if (userExistente.isPresent()) {
                 log.info("El usuario de prueba ya existe, omitiendo creacion...");
             } else {
                 Usuario usuarioPrueba = new Usuario(
                         "Usuario Prueba",
-                        "usuario@artcook.com",
-                        passwordEncoder.encode("User123!"),
+                        userEmail,
+                        passwordEncoder.encode(userPassword),
                         RolUsuario.USER
                 );
                 usuarioPrueba.setEmailVerificado(true);
                 usuarioPrueba.setActivo(true);
                 usuarioRepo.save(usuarioPrueba);
-                log.info("Usuario de prueba creado: usuario@artcook.com / User123!");
+                log.info("Usuario de prueba creado: {}", userEmail);
             }
         };
     }
