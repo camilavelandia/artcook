@@ -4,57 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
-import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
-
-import java.io.*;
-import java.nio.file.*;
-import java.util.*;
-
-@Service
-public class VideoService {
-
-	@Value("${app.falai.api-key}")
-	private String falAiApiKey;
-
-	@Value("${deepgram.api.key}")
-	private String deepgramApiKey;
-
-	@Value("${app.videos.path}")
-	private String videosPath;
-
-	@Value("${app.ffmpeg.path}")
-	private String ffmpegPath;
-
-	private final RestTemplate restTemplate = new RestTemplate();
-	private final ObjectMapper objectMapper = new ObjectMapper();
-
-	public String generarVideo(String jsonReceta, String nombreReceta) throws Exception {
-
-		Files.createDirectories(Paths.get(videosPath));
-
-		String jsonLimpio = jsonReceta.replaceAll("(?s)^```json\\s*", "").replaceAll("(?s)```\\s*$", "").trim();
-
-		JsonNode raiz = objectMapper.readTree(jsonLimpio);
-
-		String tipo = "";
-		if (raiz.has("tipo")) {
-			tipo = raiz.get("tipo").asText().toLowerCase();
-		}
-
-		JsonNode pasosNode = null;
-		if (raiz.has("pasos") && raiz.get("pasos").isArray()) {
-			pasosNode = raiz.get("pasos");
-		} else if (raiz.has("pasos_simplificados") && raiz.get("pasos_simplificados").isArray()) {
-			pasosNode = raiz.get("pasos_simplificados");
-		}
-
-		if (pasosNode == null) {
-			throw new Exception("No se encontraron pasos en el JSON de la receta.");
-		}
-
-		String nombrePlato = nombreReceta;
-		if (raiz.has("nombre")) {
+.replaceAll("(?s)
 			nombrePlato = raiz.get("nombre").asText();
 		}
 
