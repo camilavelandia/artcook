@@ -73,7 +73,7 @@ public class RecetaController {
     @GetMapping("/porusuario")
     public ResponseEntity<List<RecetaDTO>> obtenerPorUsuario(@RequestParam long usuarioId) {
         try {
-            List<RecetaDTO> lista = recetaSer.obtenerPorUsuario((long) usuarioId);
+            List<RecetaDTO> lista = recetaSer.obtenerPorUsuario(usuarioId);
             if (lista.isEmpty()) {
                 return new ResponseEntity<>(lista, HttpStatus.NO_CONTENT);
             }
