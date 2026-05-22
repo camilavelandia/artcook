@@ -98,23 +98,43 @@ public class RecetaDTO {
         if (obj == null) return false;
         if (getClass() != obj.getClass()) return false;
         RecetaDTO other = (RecetaDTO) obj;
+        return comparePrimitives(other)
+                && compareDates(other)
+                && compareNonJsonStringFields(other)
+                && compareJsonRecetaFields(other)
+                && comparePorciones(other);
+    }
+
+    private boolean comparePrimitives(RecetaDTO other) {
         return activa == other.activa
-                && Objects.equals(fechaActualizacion, other.fechaActualizacion)
-                && Objects.equals(fechaCreacion, other.fechaCreacion)
-                && Objects.equals(guionNaracion, other.guionNaracion)
-                && Objects.equals(iaSeleccionada, other.iaSeleccionada)
                 && id == other.id
-                && Objects.equals(jsonRecetaClaude, other.jsonRecetaClaude)
-                && Objects.equals(jsonRecetaGPT, other.jsonRecetaGPT)
-                && Objects.equals(jsonRecetaGemini, other.jsonRecetaGemini)
-                && Objects.equals(jsonRecetaSeleccionada, other.jsonRecetaSeleccionada)
-                && Objects.equals(porciones, other.porciones)
-                && Objects.equals(promptOriginal, other.promptOriginal)
                 && tipoReceta == other.tipoReceta
+                && usuarioId == other.usuarioId;
+    }
+
+    private boolean compareDates(RecetaDTO other) {
+        return Objects.equals(fechaActualizacion, other.fechaActualizacion)
+                && Objects.equals(fechaCreacion, other.fechaCreacion);
+    }
+
+    private boolean compareNonJsonStringFields(RecetaDTO other) {
+        return Objects.equals(guionNaracion, other.guionNaracion)
+                && Objects.equals(iaSeleccionada, other.iaSeleccionada)
+                && Objects.equals(promptOriginal, other.promptOriginal)
                 && Objects.equals(titulo, other.titulo)
                 && Objects.equals(urlAudio, other.urlAudio)
-                && Objects.equals(urlVideo, other.urlVideo)
-                && usuarioId == other.usuarioId;
+                && Objects.equals(urlVideo, other.urlVideo);
+    }
+
+    private boolean compareJsonRecetaFields(RecetaDTO other) {
+        return Objects.equals(jsonRecetaClaude, other.jsonRecetaClaude)
+                && Objects.equals(jsonRecetaGPT, other.jsonRecetaGPT)
+                && Objects.equals(jsonRecetaGemini, other.jsonRecetaGemini)
+                && Objects.equals(jsonRecetaSeleccionada, other.jsonRecetaSeleccionada);
+    }
+
+    private boolean comparePorciones(RecetaDTO other) {
+        return Objects.equals(porciones, other.porciones);
     }
 
     @Override
