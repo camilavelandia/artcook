@@ -108,7 +108,7 @@ public class RecetaService implements CRUDOperation<RecetaDTO> {
      * @throws RegistroNoEncontradoException si la receta no existe
      */
     @Override
-    public int deleteByID(Long id) throws RegistroNoEncontradoException {
+    public int deleteByID(Long id) {
         try {
             LanzadorExcepciones.validarId(id);
             if (recetaRepo.existsById(id)) {

@@ -1,7 +1,7 @@
 package co.edu.unbosque.artcook.services;
 
 import java.util.List;
-import co.edu.unbosque.artcook.exceptions.UpdateByIdException;
+
 
 /**
  * Interfaz genérica que define las operaciones CRUD básicas del sistema.
@@ -17,7 +17,7 @@ public interface CRUDOperation<T> {
      * @return código de estado: 0 éxito, otro número indica el tipo de error
      * @throws Exception si ocurre un error durante la creación
      */
-    int create(T data) throws DataCreationException;
+    int create(T data);
 
     /**
      * Obtiene todos los registros.
@@ -33,7 +33,7 @@ public interface CRUDOperation<T> {
      * @return código de estado: 0 éxito, 1 si no se encontró
      * @throws Exception si ocurre un error durante la eliminación
      */
-    int deleteByID(Long id) throws DeleteException;
+    int deleteByID(Long id);
 
     /**
      * Actualiza un registro por su ID.
@@ -43,7 +43,7 @@ public interface CRUDOperation<T> {
      * @return código de estado: 0 éxito, otro número indica el tipo de error
      * @throws Exception si ocurre un error durante la actualización
      */
-    int updateByID(Long id, T data) throws UpdateByIdException;
+    int updateByID(Long id, T data);
 
     /**
      * Obtiene el total de registros.
