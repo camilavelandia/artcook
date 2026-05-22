@@ -77,6 +77,42 @@ public class IAController {
 		}
 	}
 
+	// Endpoint nuevo — permite al usuario elegir una sola IA para generar
+	// el parametro 'ia' puede ser: gpt, gemini o claude
+	@PostMapping("/generar")
+	public ResponseEntity<?> generarConIASeleccionada(
+			@RequestParam String prompt,
+			@RequestParam String tipo,
+			@RequestParam(required = false) Integer porciones,
+			@RequestParam long usuarioId,
+			@RequestParam String ia) {
+
+		// Si no se envian porciones se usa 1 por defecto
+		Integer porcionesFinales = porciones != null ? porciones : 1;
+
+		try {
+			// Llama al servicio correspondiente segun la IA elegida
+			String resultado = switch (ia.toLowerCase()) {
+				case "gpt"    -> iaService.generarRecetaConGPT(prompt, tipo, porcionesFinales);
+				case "gemini" -> iaService.generarRecetaConGemini(prompt, tipo, porcionesFinales);
+				case "claude" -> iaService.generarRecetaConClaude(prompt, tipo, porcionesFinales);
+				default -> throw new IllegalArgumentException("IA no valida. Usa: gpt, gemini o claude");
+			};
+
+			auditoriaService.registrarAccion(usuarioId, "GENERAR_" + ia.toUpperCase(),
+					"IA", null, "Generado con " + ia + ". Prompt: " + prompt);
+
+			return new ResponseEntity<>(resultado, HttpStatus.OK);
+
+		} catch (IllegalArgumentException e) {
+			return new ResponseEntity<>(e.getMessage(), HttpStatus.BAD_REQUEST);
+		} catch (PromptVacioException e) {
+			return new ResponseEntity<>("El prompt no puede estar vacio.", HttpStatus.BAD_REQUEST);
+		} catch (Exception e) {
+			return new ResponseEntity<>("Error inesperado al consultar la IA.", HttpStatus.INTERNAL_SERVER_ERROR);
+		}
+	}
+
 	@PostMapping("/generar-todas")
 	public ResponseEntity<?> generarConTodasLasIAs(@RequestParam String titulo, @RequestParam String tipo,
 			@RequestParam String prompt, @RequestParam(required = false) Integer porciones,
