@@ -351,7 +351,7 @@ public class RecetaService implements CRUDOperation<RecetaDTO> {
 
         } catch (Exception e) {
             e.printStackTrace();
-            return null;
+            return new byte[0];
         }
     }
 }
