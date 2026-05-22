@@ -16,7 +16,7 @@ public interface CRUDOperation<T> {
      * @return código de estado: 0 éxito, otro número indica el tipo de error
      * @throws Exception si ocurre un error durante la creación
      */
-    int create(T data) throws Exception;
+    int create(T data) throws DataCreationException;
 
     /**
      * Obtiene todos los registros.
