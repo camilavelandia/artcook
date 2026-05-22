@@ -53,57 +53,99 @@ public class IAController {
 	public ResponseEntity<?> generarConGemini(@RequestParam String prompt, @RequestParam long usuarioId) {
 		try {
 			String resultado = iaService.generarRecetaConGemini(prompt, "COCINA", 2);
-			auditoriaService.registrarAccion(usuarioId, "GENERAR_RECETA_GEMINI", "IA", null,
-					"Receta generada con Gemini. Prompt: " + prompt);
-			return new ResponseEntity<>(resultado, HttpStatus.OK);
-		} catch (PromptVacioException e) {
-			return new ResponseEntity<>("El prompt no puede estar vacío o es muy corto.", HttpStatus.BAD_REQUEST);
-		} catch (Exception e) {
-			return new ResponseEntity<>("Error inesperado al consultar Gemini.", HttpStatus.INTERNAL_SERVER_ERROR);
-		}
-	}
-
-	@PostMapping("/generar-claude")
-	public ResponseEntity<?> generarConClaude(@RequestParam String prompt, @RequestParam long usuarioId) {
-		try {
-			String resultado = iaService.generarRecetaConClaude(prompt, "COCINA", 2);
-			auditoriaService.registrarAccion(usuarioId, "GENERAR_RECETA_CLAUDE", "IA", null,
-					"Receta generada con Claude. Prompt: " + prompt);
-			return new ResponseEntity<>(resultado, HttpStatus.OK);
-		} catch (PromptVacioException e) {
-			return new ResponseEntity<>("El prompt no puede estar vacío o es muy corto.", HttpStatus.BAD_REQUEST);
-		} catch (Exception e) {
-			return new ResponseEntity<>("Error inesperado al consultar Claude.", HttpStatus.INTERNAL_SERVER_ERROR);
-		}
-	}
-
 	@PostMapping("/generar-todas")
 	public ResponseEntity<?> generarConTodasLasIAs(@RequestParam String titulo, @RequestParam String tipo,
 			@RequestParam String prompt, @RequestParam(required = false) Integer porciones,
 			@RequestParam long usuarioId) {
 
-		System.out.println("GEMINI KEY: " + iaService.getGeminiKey());
+		logGeminiKey();
 
+		ResponseEntity<String> tipoValidation = validateTipo(tipo);
+		if (tipoValidation != null) {
+			return tipoValidation;
+		}
+
+		ResponseEntity<String> porcionesValidation = validatePorciones(tipo, porciones);
+		if (porcionesValidation != null) {
+			return porcionesValidation;
+		}
+
+		int porcionesFinales = obtenerPorcionesFinales(porciones);
+
+		CompletableFuture<String> futuroGPT = crearFuturoGPT(prompt, tipo, porcionesFinales);
+		CompletableFuture<String> futuroGemini = crearFuturoGemini(prompt, tipo, porcionesFinales);
+		CompletableFuture<String> futuroClaude = crearFuturoClaude(prompt, tipo, porcionesFinales);
+
+		CompletableFuture.allOf(futuroGPT, futuroGemini, futuroClaude).join();
+
+		String resultado = combinarResultados(titulo, tipo, porcionesFinales,
+			futuroGPT.join(), futuroGemini.join(), futuroClaude.join());
+
+		auditoriaService.registrarAccion(usuarioId, "GENERAR_RECETA_TODAS", "IA", null,
+			"Receta generada con todas las IAs. Prompt: " + prompt);
+		return new ResponseEntity<>(resultado, HttpStatus.OK);
+	}
+
+	private void logGeminiKey() {
+		System.out.println("GEMINI KEY: " + iaService.getGeminiKey());
+	}
+
+	private ResponseEntity<String> validateTipo(String tipo) {
 		if (!tipo.equalsIgnoreCase("COCINA") && !tipo.equalsIgnoreCase("MANUALIDAD")) {
 			return new ResponseEntity<>("El tipo debe ser COCINA o MANUALIDAD.", HttpStatus.BAD_REQUEST);
 		}
+		return null;
+	}
+
+	private ResponseEntity<String> validatePorciones(String tipo, Integer porciones) {
 		if (tipo.equalsIgnoreCase("COCINA") && (porciones == null || porciones <= 0)) {
 			return new ResponseEntity<>("Las porciones deben ser mayor a 0.", HttpStatus.BAD_REQUEST);
 		}
+		return null;
+	}
 
-		final Integer porcionesFinales = porciones != null ? porciones : 1;
+	private Integer obtenerPorcionesFinales(Integer porciones) {
+		return porciones != null ? porciones : 1;
+	}
 
-		CompletableFuture<String> futuroGPT = CompletableFuture.supplyAsync(() -> {
+	private CompletableFuture<String> crearFuturoGPT(String prompt, String tipo, Integer porciones) {
+		return CompletableFuture.supplyAsync(() -> {
 			try {
-				return iaService.generarRecetaConGPT(prompt, tipo, porcionesFinales);
+				return iaService.generarRecetaConGPT(prompt, tipo, porciones);
 			} catch (Exception e) {
 				System.out.println("ERROR GPT: " + e.getMessage());
 				return null;
 			}
 		});
+	}
 
-		CompletableFuture<String> futuroGemini = CompletableFuture.supplyAsync(() -> {
+	private CompletableFuture<String> crearFuturoGemini(String prompt, String tipo, Integer porciones) {
+		return CompletableFuture.supplyAsync(() -> {
 			try {
+				return iaService.generarRecetaConGemini(prompt, tipo, porciones);
+			} catch (Exception e) {
+				System.out.println("ERROR GEMINI: " + e.getMessage());
+				return null;
+			}
+		});
+	}
+
+	private CompletableFuture<String> crearFuturoClaude(String prompt, String tipo, Integer porciones) {
+		return CompletableFuture.supplyAsync(() -> {
+			try {
+				return iaService.generarRecetaConClaude(prompt, tipo, porciones);
+			} catch (Exception e) {
+				System.out.println("ERROR CLAUDE: " + e.getMessage());
+				return null;
+			}
+		});
+	}
+
+	private String combinarResultados(String titulo, String tipo, Integer porciones,
+		String gpt, String gemini, String claude) {
+		return "Título: " + titulo + "\nTipo: " + tipo + "\nPorciones: " + porciones
+			+ "\n--- GPT ---\n" + gpt + "\n--- Gemini ---\n" + gemini + "\n--- Claude ---\n" + claude;
+	}
 				return iaService.generarRecetaConGemini(prompt, tipo, porcionesFinales);
 			} catch (Exception e) {
 				System.out.println("ERROR GEMINI: " + e.getMessage());
