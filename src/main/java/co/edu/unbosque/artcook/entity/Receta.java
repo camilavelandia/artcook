@@ -124,27 +124,46 @@ public class Receta {
 
     @Override
     public boolean equals(Object obj) {
-        if (this == obj) return true;
-        if (obj == null) return false;
-        if (getClass() != obj.getClass()) return false;
+        if (this == obj) {
+            return true;
+        }
+        if (obj == null || getClass() != obj.getClass()) {
+            return false;
+        }
         Receta other = (Receta) obj;
+        return hasSameIdentity(other)
+                && hasSameDates(other)
+                && hasSameContentFields(other)
+                && hasSameRecetaJsons(other);
+    }
+
+    private boolean hasSameIdentity(Receta other) {
         return activa == other.activa
-                && Objects.equals(fechaActualizacion, other.fechaActualizacion)
-                && Objects.equals(fechaCreacion, other.fechaCreacion)
-                && Objects.equals(guionNaracion, other.guionNaracion)
-                && Objects.equals(iaSeleccionada, other.iaSeleccionada)
                 && id == other.id
-                && Objects.equals(jsonRecetaClaude, other.jsonRecetaClaude)
-                && Objects.equals(jsonRecetaGPT, other.jsonRecetaGPT)
-                && Objects.equals(jsonRecetaGemini, other.jsonRecetaGemini)
-                && Objects.equals(jsonRecetaSeleccionada, other.jsonRecetaSeleccionada)
+                && usuarioId == other.usuarioId
+                && tipoReceta == other.tipoReceta;
+    }
+
+    private boolean hasSameDates(Receta other) {
+        return Objects.equals(fechaActualizacion, other.fechaActualizacion)
+                && Objects.equals(fechaCreacion, other.fechaCreacion);
+    }
+
+    private boolean hasSameContentFields(Receta other) {
+        return Objects.equals(guionNaracion, other.guionNaracion)
+                && Objects.equals(iaSeleccionada, other.iaSeleccionada)
                 && Objects.equals(porciones, other.porciones)
                 && Objects.equals(promptOriginal, other.promptOriginal)
-                && tipoReceta == other.tipoReceta
                 && Objects.equals(titulo, other.titulo)
                 && Objects.equals(urlAudio, other.urlAudio)
-                && Objects.equals(urlVideo, other.urlVideo)
-                && usuarioId == other.usuarioId;
+                && Objects.equals(urlVideo, other.urlVideo);
+    }
+
+    private boolean hasSameRecetaJsons(Receta other) {
+        return Objects.equals(jsonRecetaClaude, other.jsonRecetaClaude)
+                && Objects.equals(jsonRecetaGPT, other.jsonRecetaGPT)
+                && Objects.equals(jsonRecetaGemini, other.jsonRecetaGemini)
+                && Objects.equals(jsonRecetaSeleccionada, other.jsonRecetaSeleccionada);
     }
 
     @Override
