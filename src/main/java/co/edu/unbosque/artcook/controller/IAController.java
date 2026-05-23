@@ -115,88 +115,100 @@ public class IAController {
 
 	@PostMapping("/generar-todas")
 	public ResponseEntity<?> generarConTodasLasIAs(@RequestParam String titulo, @RequestParam String tipo,
-			@RequestParam String prompt, @RequestParam(required = false) Integer porciones,
-			@RequestParam long usuarioId) {
+	        @RequestParam String prompt, @RequestParam(required = false) Integer porciones,
+	        @RequestParam long usuarioId) {
 
-		System.out.println("GEMINI KEY: " + iaService.getGeminiKey());
+	    // valida el prompt antes de llamar las IAs
+	    if (prompt == null || prompt.trim().length() < 10) {
+	        return new ResponseEntity<>("El prompt debe tener al menos 10 caracteres.", HttpStatus.BAD_REQUEST);
+	    }
 
-		if (!tipo.equalsIgnoreCase("COCINA") && !tipo.equalsIgnoreCase("MANUALIDAD")) {
-			return new ResponseEntity<>("El tipo debe ser COCINA o MANUALIDAD.", HttpStatus.BAD_REQUEST);
-		}
-		if (tipo.equalsIgnoreCase("COCINA") && (porciones == null || porciones <= 0)) {
-			return new ResponseEntity<>("Las porciones deben ser mayor a 0.", HttpStatus.BAD_REQUEST);
-		}
+	    if (!tipo.equalsIgnoreCase("COCINA") && !tipo.equalsIgnoreCase("MANUALIDAD")) {
+	        return new ResponseEntity<>("El tipo debe ser COCINA o MANUALIDAD.", HttpStatus.BAD_REQUEST);
+	    }
 
-		final Integer porcionesFinales = porciones != null ? porciones : 1;
+	    if (tipo.equalsIgnoreCase("COCINA") && (porciones == null || porciones <= 0)) {
+	        return new ResponseEntity<>("Las porciones deben ser mayor a 0.", HttpStatus.BAD_REQUEST);
+	    }
 
-		CompletableFuture<String> futuroGPT = CompletableFuture.supplyAsync(() -> {
-			try {
-				return iaService.generarRecetaConGPT(prompt, tipo, porcionesFinales);
-			} catch (Exception e) {
-				System.out.println("ERROR GPT: " + e.getMessage());
-				return null;
-			}
-		});
+	    final Integer porcionesFinales = porciones != null ? porciones : 1;
 
-		CompletableFuture<String> futuroGemini = CompletableFuture.supplyAsync(() -> {
-			try {
-				return iaService.generarRecetaConGemini(prompt, tipo, porcionesFinales);
-			} catch (Exception e) {
-				System.out.println("ERROR GEMINI: " + e.getMessage());
-				return null;
-			}
-		});
+	    CompletableFuture<String> futuroGPT = CompletableFuture.supplyAsync(() -> {
+	        try {
+	            return iaService.generarRecetaConGPT(prompt, tipo, porcionesFinales);
+	        } catch (Exception e) {
+	            System.out.println("ERROR GPT: " + e.getMessage());
+	            return null;
+	        }
+	    });
 
-		CompletableFuture<String> futuroClaude = CompletableFuture.supplyAsync(() -> {
-			try {
-				return iaService.generarRecetaConClaude(prompt, tipo, porcionesFinales);
-			} catch (Exception e) {
-				System.out.println("ERROR CLAUDE: " + e.getMessage());
-				return null;
-			}
-		});
+	    CompletableFuture<String> futuroGemini = CompletableFuture.supplyAsync(() -> {
+	        try {
+	            return iaService.generarRecetaConGemini(prompt, tipo, porcionesFinales);
+	        } catch (Exception e) {
+	            System.out.println("ERROR GEMINI: " + e.getMessage());
+	            return null;
+	        }
+	    });
 
-		try {
-			CompletableFuture.allOf(futuroGPT, futuroGemini, futuroClaude).get(30, TimeUnit.SECONDS);
-		} catch (TimeoutException e) {
-			System.out.println("Timeout - tomando lo que llegó");
-		} catch (Exception e) {
-			System.out.println("Error en allOf: " + e.getMessage());
-		}
+	    CompletableFuture<String> futuroClaude = CompletableFuture.supplyAsync(() -> {
+	        try {
+	            return iaService.generarRecetaConClaude(prompt, tipo, porcionesFinales);
+	        } catch (Exception e) {
+	            System.out.println("ERROR CLAUDE: " + e.getMessage());
+	            return null;
+	        }
+	    });
 
-		String resultadoGPT = futuroGPT.getNow("OpenAI no disponible.");
-		String resultadoGemini = futuroGemini.getNow("Gemini no disponible.");
-		String resultadoClaude = futuroClaude.getNow("Claude no disponible.");
+	    try {
+	        CompletableFuture.allOf(futuroGPT, futuroGemini, futuroClaude).get(30, TimeUnit.SECONDS);
+	    } catch (TimeoutException e) {
+	        System.out.println("Timeout - tomando lo que llegó");
+	    } catch (Exception e) {
+	        System.out.println("Error en allOf: " + e.getMessage());
+	    }
 
-		System.out.println("GPT: " + resultadoGPT);
-		System.out.println("GEMINI: " + resultadoGemini);
-		System.out.println("CLAUDE: " + resultadoClaude);
+	    String resultadoGPT    = futuroGPT.getNow(null);
+	    String resultadoGemini = futuroGemini.getNow(null);
+	    String resultadoClaude = futuroClaude.getNow(null);
 
-		TipoRecetaDTO tipoDTO = TipoRecetaDTO.valueOf(tipo.toUpperCase());
-		RecetaDTO recetaDTO = new RecetaDTO(titulo, prompt, tipoDTO, porcionesFinales, usuarioId);
-		recetaDTO.setJsonRecetaGPT(resultadoGPT);
-		recetaDTO.setJsonRecetaGemini(resultadoGemini);
-		recetaDTO.setJsonRecetaClaude(resultadoClaude);
+	    System.out.println("GPT: " + resultadoGPT);
+	    System.out.println("GEMINI: " + resultadoGemini);
+	    System.out.println("CLAUDE: " + resultadoClaude);
 
-		int resultadoGuardado = recetaSer.create(recetaDTO);
-		if (resultadoGuardado != 0) {
-			return new ResponseEntity<>("Error al guardar la receta.", HttpStatus.INTERNAL_SERVER_ERROR);
-		}
+	    // si las 3 IAs fallaron, retorna 503 en vez de guardar una receta vacía
+	    if (resultadoGPT == null && resultadoGemini == null && resultadoClaude == null) {
+	        return new ResponseEntity<>(
+	            "Ninguna IA pudo generar la receta. Intenta con un prompt más descriptivo.",
+	            HttpStatus.SERVICE_UNAVAILABLE
+	        );
+	    }
 
-		auditoriaService.registrarAccion(usuarioId, "GENERAR_RECETA_TODAS_IAS", "Receta", recetaDTO.getId(),
-				"Receta generada con las 3 IAs. Prompt: " + prompt);
+	    TipoRecetaDTO tipoDTO = TipoRecetaDTO.valueOf(tipo.toUpperCase());
+	    RecetaDTO recetaDTO = new RecetaDTO(titulo, prompt, tipoDTO, porcionesFinales, usuarioId);
+	    recetaDTO.setJsonRecetaGPT(resultadoGPT);
+	    recetaDTO.setJsonRecetaGemini(resultadoGemini);
+	    recetaDTO.setJsonRecetaClaude(resultadoClaude);
 
-		Map<String, Object> respuesta = new HashMap<>();
-		respuesta.put("recetaId", recetaDTO.getId());
-		respuesta.put("prompt", prompt);
-		respuesta.put("recetaGPT", resultadoGPT);
-		respuesta.put("recetaGemini", resultadoGemini);
-		respuesta.put("recetaClaude", resultadoClaude);
-		respuesta.put("exitosaGPT", resultadoGPT != null && !resultadoGPT.equals("OpenAI no disponible."));
-		respuesta.put("exitosaGemini", resultadoGemini != null && !resultadoGemini.equals("Gemini no disponible."));
-		respuesta.put("exitosaClaude", resultadoClaude != null && !resultadoClaude.equals("Claude no disponible."));
+	    int resultadoGuardado = recetaSer.create(recetaDTO);
+	    if (resultadoGuardado != 0) {
+	        return new ResponseEntity<>("Error al guardar la receta.", HttpStatus.INTERNAL_SERVER_ERROR);
+	    }
 
-		return new ResponseEntity<>(respuesta, HttpStatus.CREATED);
+	    auditoriaService.registrarAccion(usuarioId, "GENERAR_RECETA_TODAS_IAS", "Receta",
+	            recetaDTO.getId(), "Receta generada con las 3 IAs. Prompt: " + prompt);
+
+	    Map<String, Object> respuesta = new HashMap<>();
+	    respuesta.put("recetaId",      recetaDTO.getId());
+	    respuesta.put("prompt",        prompt);
+	    respuesta.put("recetaGPT",     resultadoGPT);
+	    respuesta.put("recetaGemini",  resultadoGemini);
+	    respuesta.put("recetaClaude",  resultadoClaude);
+	    respuesta.put("exitosaGPT",    resultadoGPT != null);
+	    respuesta.put("exitosaGemini", resultadoGemini != null);
+	    respuesta.put("exitosaClaude", resultadoClaude != null);
+
+	    return new ResponseEntity<>(respuesta, HttpStatus.CREATED);
 	}
 
 	@PostMapping("/narracion")
