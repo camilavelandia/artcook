@@ -31,32 +31,20 @@ public class SecurityConfig {
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthFilter,
                           UserDetailsService userDetailsService) {
-
         this.jwtAuthFilter = jwtAuthFilter;
         this.userDetailsService = userDetailsService;
     }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-
         http
-            // CORS
             .cors(Customizer.withDefaults())
-
-            // CSRF desactivado para APIs REST con JWT
             .csrf(csrf -> csrf.disable())
-
-            // Sesiones stateless
             .sessionManagement(session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             )
-
-            // Permisos
             .authorizeHttpRequests(auth -> auth
-
-                // =========================
-                // PUBLICOS
-                // =========================
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers(
                     "/usuario/registrar",
                     "/usuario/login",
@@ -67,13 +55,6 @@ public class SecurityConfig {
                     "/swagger-ui/**",
                     "/v3/api-docs/**"
                 ).permitAll()
-
-                // Permitir preflight OPTIONS
-                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-
-                // =========================
-                // ADMIN
-                // =========================
                 .requestMatchers(
                     "/usuario/mostrartodo",
                     "/usuario/eliminar",
@@ -83,10 +64,6 @@ public class SecurityConfig {
                     "/usuario/existe",
                     "/auditoria/**"
                 ).hasRole("ADMIN")
-
-                // =========================
-                // USER y ADMIN
-                // =========================
                 .requestMatchers(
                     "/usuario/poremail",
                     "/usuario/actualizar",
@@ -94,15 +71,9 @@ public class SecurityConfig {
                     "/ia/**",
                     "/video/**"
                 ).hasAnyRole("USER", "ADMIN")
-
-                // Todo lo demás requiere auth
                 .anyRequest().authenticated()
             )
-
-            // Provider
             .authenticationProvider(authenticationProvider())
-
-            // JWT Filter
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
@@ -110,55 +81,30 @@ public class SecurityConfig {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-
         CorsConfiguration config = new CorsConfiguration();
-
-        // Frontends permitidos
         config.setAllowedOrigins(List.of(
             "http://localhost:4200",
             "http://localhost:4201"
-            // Agrega aquí Netlify luego
         ));
-
-        // Métodos permitidos
-        config.setAllowedMethods(List.of(
-            "GET",
-            "POST",
-            "PUT",
-            "DELETE",
-            "OPTIONS"
-        ));
-
-        // Headers permitidos
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
-
-        // Permitir credenciales
         config.setAllowCredentials(true);
 
-        UrlBasedCorsConfigurationSource source =
-                new UrlBasedCorsConfigurationSource();
-
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
-
         return source;
     }
 
     @Bean
     public AuthenticationProvider authenticationProvider() {
-
-        DaoAuthenticationProvider authProvider =
-                new DaoAuthenticationProvider();
-
+        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
         authProvider.setUserDetailsService(userDetailsService);
         authProvider.setPasswordEncoder(passwordEncoder());
-
         return authProvider;
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(
-            AuthenticationConfiguration config) throws Exception {
-
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
     }
 
