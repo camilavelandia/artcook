@@ -2,6 +2,8 @@ package co.edu.unbosque.artcook.services;
 
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -16,8 +18,8 @@ import co.edu.unbosque.artcook.exception.LanzadorExcepciones;
 import co.edu.unbosque.artcook.exception.PromptVacioException;
 
 /**
- * Servicio que gestiona las llamadas a las tres IAs del sistema. Conecta con
- * OpenAI (GPT), Google (Gemini) y Anthropic (Claude).
+ * Servicio que gestiona las llamadas a las tres IAs del sistema.
+ * Conecta con OpenAI (GPT), Google (Gemini) y Anthropic (Claude).
  */
 @Service
 public class IAService {
@@ -66,8 +68,9 @@ public class IAService {
 			headers.setContentType(MediaType.APPLICATION_JSON);
 			headers.setBearerAuth(openAiApiKey);
 
-			Map<String, Object> body = Map.of("model", "gpt-4o-mini", "messages",
-					List.of(Map.of("role", "user", "content", construirPromptGPT(prompt, tipoReceta, porciones))),
+			Map<String, Object> body = Map.of(
+					"model", "gpt-4o-mini",
+					"messages", List.of(Map.of("role", "user", "content", construirPromptGPT(prompt, tipoReceta, porciones))),
 					"max_tokens", 1500);
 
 			HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
@@ -86,10 +89,26 @@ public class IAService {
 	/**
 	 * Genera contenido usando Google Gemini con el prompt dado.
 	 *
+	 * <p>Intenta primero con {@code gemini-2.5-flash} y, si falla por cuota o
+	 * disponibilidad, cae en {@code gemini-2.5-flash-lite} como respaldo.</p>
+	 *
+	 * <p>El modelo {@code gemini-2.5-flash} tiene razonamiento interno habilitado
+	 * por defecto. Ese razonamiento consume tokens del mismo presupuesto de
+	 * {@code maxOutputTokens}, dejando muy pocos tokens disponibles para la
+	 * respuesta real y provocando que el JSON quede truncado. Por ello se
+	 * desactiva el thinking mediante {@code thinkingConfig: {thinkingBudget: 0}},
+	 * de modo que todos los tokens se destinen íntegramente al JSON de la receta.</p>
+	 *
+	 * <p>Como medida de defensa adicional, este método itera sobre todas las partes
+	 * de la respuesta y extrae únicamente aquella donde {@code thought} es
+	 * {@code null} o {@code false}. También limpia posibles bloques de markdown
+	 * y extrae el objeto JSON en caso de que Gemini incluya texto adicional
+	 * alrededor.</p>
+	 *
 	 * @param prompt     prompt de la receta o manualidad
 	 * @param tipoReceta tipo de receta (COCINA o MANUALIDAD)
 	 * @param porciones  número de porciones
-	 * @return contenido generado por Gemini
+	 * @return contenido JSON generado por Gemini
 	 * @throws PromptVacioException si el prompt es nulo, vacío o muy corto
 	 */
 	public String generarRecetaConGemini(String prompt, String tipoReceta, Integer porciones)
@@ -110,10 +129,12 @@ public class IAService {
 				headers.setContentType(MediaType.APPLICATION_JSON);
 				headers.set("x-goog-api-key", geminiApiKey);
 
-				Map<String, Object> body = Map.of("contents",
-						List.of(Map.of("parts",
-								List.of(Map.of("text", construirPromptGemini(prompt, tipoReceta, porciones))))),
-						"generationConfig", Map.of("maxOutputTokens", 1500, "temperature", 0.7));
+				Map<String, Object> body = Map.of(
+						"contents", List.of(Map.of("parts", List.of(Map.of("text", construirPromptGemini(prompt, tipoReceta, porciones))))),
+						"generationConfig", Map.of(
+								"maxOutputTokens", 2000,
+								"temperature", 0.7,
+								"thinkingConfig", Map.of("thinkingBudget", 0)));
 
 				HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 				Map response = restTemplate.postForObject(url, request, Map.class);
@@ -122,8 +143,31 @@ public class IAService {
 				Map candidate = (Map) candidates.get(0);
 				Map content = (Map) candidate.get("content");
 				List parts = (List) content.get("parts");
-				Map part = (Map) parts.get(0);
-				String resultado = (String) part.get("text");
+
+				String resultado = null;
+				for (Object partObj : parts) {
+					Map partMap = (Map) partObj;
+					Object isThought = partMap.get("thought");
+					if (isThought == null || Boolean.FALSE.equals(isThought)) {
+						resultado = (String) partMap.get("text");
+					}
+				}
+
+				if (resultado == null) {
+					Map ultimaParte = (Map) parts.get(parts.size() - 1);
+					resultado = (String) ultimaParte.get("text");
+				}
+
+				resultado = resultado
+						.replaceAll("(?i)```json", "")
+						.replaceAll("```", "")
+						.trim();
+
+				Matcher matcher = Pattern.compile("\\{[\\s\\S]*\\}").matcher(resultado);
+				if (matcher.find()) {
+					resultado = matcher.group();
+				}
+
 				System.out.println("GEMINI OK con modelo: " + modelo);
 				return resultado;
 
@@ -166,8 +210,10 @@ public class IAService {
 			headers.set("x-api-key", claudeApiKey);
 			headers.set("anthropic-version", "2023-06-01");
 
-			Map<String, Object> body = Map.of("model", "claude-haiku-4-5", "max_tokens", 1500, "messages",
-					List.of(Map.of("role", "user", "content", construirPromptClaude(prompt, tipoReceta, porciones))));
+			Map<String, Object> body = Map.of(
+					"model", "claude-haiku-4-5",
+					"max_tokens", 1500,
+					"messages", List.of(Map.of("role", "user", "content", construirPromptClaude(prompt, tipoReceta, porciones))));
 
 			HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 			Map response = restTemplate.postForObject(url, request, Map.class);
@@ -198,8 +244,7 @@ public class IAService {
 	public String generarNarracionConIA(String textoReceta) throws CampoVacioException {
 		LanzadorExcepciones.validarCampoVacio(textoReceta, "textoReceta");
 		try {
-			return generarRecetaConGPT("Genera una narración clara y amigable para esta receta: " + textoReceta,
-					"COCINA", 1);
+			return generarRecetaConGPT("Genera una narración clara y amigable para esta receta: " + textoReceta, "COCINA", 1);
 		} catch (PromptVacioException e) {
 			return "No se pudo generar la narracion.";
 		}
@@ -224,39 +269,55 @@ public class IAService {
 	}
 
 	/**
-	 * Construye el prompt para OpenAI GPT — chef profesional de gastronomía
-	 * internacional.
+	 * Construye el prompt para OpenAI GPT.
+	 *
+	 * <p>Instruye al modelo para responder como chef experto o manualista,
+	 * con los ingredientes escalados para el número de porciones indicado.</p>
+	 *
+	 * @param prompt     descripción del plato o manualidad
+	 * @param tipoReceta tipo de receta (COCINA o MANUALIDAD)
+	 * @param porciones  número de porciones deseado
+	 * @return prompt listo para enviar a la API de OpenAI
 	 */
 	private String construirPromptGPT(String prompt, String tipoReceta, Integer porciones) {
 		return "Eres un experto en recetas de cocina y manualidades creativas. "
-		        + "El usuario puede pedir una RECETA DE COCINA o una MANUALIDAD. "
-		        + "Interpreta SIEMPRE la solicitud de forma positiva — si menciona algo que se puede hacer con las manos, es una manualidad válida. "
-		        + "Solo responde con error JSON si la solicitud es completamente absurda (ej: 'el cielo es azul', 'hola'). "
-		        + "Si es RECETA DE COCINA responde en JSON con: tipo, nombre, porciones, tiempo_preparacion, dificultad, "
-		        + "ingredientes (array con nombre y cantidad para " + porciones + " personas), "
-		        + "pasos (array de strings, maximo 5 pasos breves). "
-		        + "Si es MANUALIDAD responde en JSON con: tipo, nombre, dificultad, tiempo_estimado, "
-		        + "materiales (array con nombre y cantidad), "
-		        + "pasos (array de strings, maximo 5 pasos breves). "
-		        + "Responde SOLO el JSON, sin markdown. En español.\n\n"
-		        + "El usuario pide: " + prompt;
-
+				+ "El usuario puede pedir una RECETA DE COCINA o una MANUALIDAD. "
+				+ "Interpreta SIEMPRE la solicitud de forma positiva — si menciona algo que se puede hacer con las manos, es una manualidad válida. "
+				+ "Solo responde con error JSON si la solicitud es completamente absurda (ej: 'el cielo es azul', 'hola'). "
+				+ "Si es RECETA DE COCINA responde en JSON con: tipo, nombre, porciones, tiempo_preparacion, dificultad, "
+				+ "ingredientes (array con nombre y cantidad para " + porciones + " personas), "
+				+ "pasos (array de strings, maximo 5 pasos breves). "
+				+ "Si es MANUALIDAD responde en JSON con: tipo, nombre, dificultad, tiempo_estimado, "
+				+ "materiales (array con nombre y cantidad), "
+				+ "pasos (array de strings, maximo 5 pasos breves). "
+				+ "Responde SOLO el JSON, sin markdown. En español.\n\n"
+				+ "El usuario pide: " + prompt;
 	}
 
 	/**
-	 * Construye el prompt para Claude — nutricionista chef especializado en cocina
-	 * saludable.
+	 * Construye el prompt para Anthropic Claude.
+	 *
+	 * <p>Embebe el número de porciones directamente en la plantilla JSON del ejemplo
+	 * e instruye explícitamente que los ingredientes deben escalarse para ese número
+	 * de personas, corrigiendo el comportamiento de devolver siempre 1 porción.</p>
+	 *
+	 * @param prompt     descripción del plato o manualidad
+	 * @param tipoReceta tipo de receta (COCINA o MANUALIDAD)
+	 * @param porciones  número de porciones deseado
+	 * @return prompt listo para enviar a la API de Anthropic
 	 */
 	private String construirPromptClaude(String prompt, String tipoReceta, Integer porciones) {
 		return "Eres un asistente experto en recetas de cocina y manualidades. "
 				+ "Detecta si el usuario pide una RECETA, una MANUALIDAD o algo INVALIDO. "
-				+ "Responde SOLO con JSON valido, sin markdown ni explicaciones. "
+				+ "Responde SOLO con JSON valido, sin markdown ni texto adicional antes o despues del JSON. "
 				+ "Si es invalido responde EXACTAMENTE: "
 				+ "{\"error\":\"Lo que escribiste no corresponde a una receta de cocina ni a una manualidad valida. Por favor intenta de nuevo.\"}. "
 				+ "Si es RECETA responde EXACTAMENTE con esta estructura: "
 				+ "{\"tipo\":\"RECETA\",\"nombre\":\"...\",\"porciones\":" + porciones + ",\"tiempo_preparacion\":\"...\","
 				+ "\"ingredientes\":[{\"nombre\":\"...\",\"cantidad\":\"...\"}],"
 				+ "\"pasos\":[\"paso 1 en una sola frase\",\"paso 2 en una sola frase\"]}. "
+				+ "REGLA OBLIGATORIA: el campo porciones DEBE ser exactamente " + porciones + ". "
+				+ "Las cantidades de TODOS los ingredientes deben estar calculadas para " + porciones + " personas. "
 				+ "Los pasos deben ser strings simples, NO objetos. Maximo 5 pasos. "
 				+ "Si es MANUALIDAD responde EXACTAMENTE con esta estructura: "
 				+ "{\"tipo\":\"MANUALIDAD\",\"nombre\":\"...\",\"dificultad\":\"...\",\"tiempo_estimado\":\"...\","
@@ -266,20 +327,39 @@ public class IAService {
 	}
 
 	/**
-	 * Construye el prompt para Gemini — chef casero experto en recetas rápidas y
-	 * económicas.
+	 * Construye el prompt para Google Gemini.
+	 *
+	 * <p>Proporciona una plantilla JSON completa con el valor de porciones embebido
+	 * e instruye explícitamente que los ingredientes deben escalarse para ese número
+	 * de personas y que el campo tipo debe ser exactamente {@code "RECETA"} o
+	 * {@code "MANUALIDAD"}, corrigiendo el problema de texto extra y tipo incorrecto
+	 * en la respuesta.</p>
+	 *
+	 * @param prompt     descripción del plato o manualidad
+	 * @param tipoReceta tipo de receta (COCINA o MANUALIDAD)
+	 * @param porciones  número de porciones deseado
+	 * @return prompt listo para enviar a la API de Gemini
 	 */
 	private String construirPromptGemini(String prompt, String tipoReceta, Integer porciones) {
 		return "Eres un chef casero experto en recetas rapidas y un experto en manualidades. "
 				+ "Detecta si el usuario pide una RECETA DE COCINA, una MANUALIDAD, o algo invalido. "
+				+ "Responde UNICAMENTE con el objeto JSON, sin ningun texto antes ni despues, sin markdown, sin bloques de codigo. "
 				+ "Si no tiene sentido responde SOLO con: {\"error\": \"Lo que escribiste no corresponde a una receta de cocina ni a una manualidad valida. Por favor intenta de nuevo.\"}. "
-				+ "Si es RECETA DE COCINA responde en JSON con: tipo, nombre, porciones, tiempo_preparacion, "
-				+ "ingredientes (array con nombre y cantidad para " + porciones + " personas), "
-				+ "pasos (array de strings, maximo 5 pasos breves y directos). "
-				+ "Si es MANUALIDAD responde en JSON con: tipo, nombre, dificultad, tiempo_estimado, "
-				+ "materiales (array con nombre y cantidad), "
-				+ "pasos (array de strings, maximo 5 pasos breves y directos). "
-				+ "Responde SOLO el JSON, sin markdown. En espanol.\n\n"
+				+ "Si es RECETA DE COCINA responde con EXACTAMENTE esta estructura JSON: "
+				+ "{\"tipo\":\"RECETA\",\"nombre\":\"nombre del plato\",\"porciones\":" + porciones + ",\"tiempo_preparacion\":\"X minutos\","
+				+ "\"ingredientes\":[{\"nombre\":\"ingrediente\",\"cantidad\":\"cantidad para " + porciones + " personas\"}],"
+				+ "\"pasos\":[\"paso 1\",\"paso 2\"]}. "
+				+ "REGLAS OBLIGATORIAS para RECETA: "
+				+ "1. El campo tipo DEBE ser exactamente la cadena RECETA. "
+				+ "2. El campo porciones DEBE ser exactamente el numero " + porciones + ". "
+				+ "3. Todas las cantidades de ingredientes DEBEN estar calculadas para " + porciones + " personas. "
+				+ "Si es MANUALIDAD responde con EXACTAMENTE esta estructura JSON: "
+				+ "{\"tipo\":\"MANUALIDAD\",\"nombre\":\"nombre\",\"dificultad\":\"Facil/Media/Dificil\",\"tiempo_estimado\":\"X minutos\","
+				+ "\"materiales\":[{\"nombre\":\"material\",\"cantidad\":\"cantidad\"}],"
+				+ "\"pasos\":[\"paso 1\",\"paso 2\"]}. "
+				+ "REGLAS OBLIGATORIAS para MANUALIDAD: "
+				+ "1. El campo tipo DEBE ser exactamente la cadena MANUALIDAD. "
+				+ "Maximo 5 pasos en ambos casos. En espanol.\n\n"
 				+ "El usuario pide: " + prompt;
 	}
 }
