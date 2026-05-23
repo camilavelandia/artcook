@@ -228,14 +228,19 @@ public class IAService {
 	 * internacional.
 	 */
 	private String construirPromptGPT(String prompt, String tipoReceta, Integer porciones) {
-		return "Eres un chef profesional. El usuario quiere una " + tipoReceta + ". "
-				+ "Trata siempre de interpretar su solicitud como una receta o manualidad válida. "
-				+ "Solo responde con el error JSON si la solicitud es completamente absurda "
-				+ "(ej: 'el cielo es azul'). "
-				+ "Si es RECETA DE COCINA responde en JSON con: tipo, nombre, porciones, "
-				+ "tiempo_preparacion, dificultad, ingredientes con cantidades exactas para " + porciones
-				+ " personas, pasos detallados y consejos profesionales. "
-				+ "Responde siempre en español.\n\nEl usuario pide: " + prompt;
+		return "Eres un experto en recetas de cocina y manualidades creativas. "
+		        + "El usuario puede pedir una RECETA DE COCINA o una MANUALIDAD. "
+		        + "Interpreta SIEMPRE la solicitud de forma positiva — si menciona algo que se puede hacer con las manos, es una manualidad válida. "
+		        + "Solo responde con error JSON si la solicitud es completamente absurda (ej: 'el cielo es azul', 'hola'). "
+		        + "Si es RECETA DE COCINA responde en JSON con: tipo, nombre, porciones, tiempo_preparacion, dificultad, "
+		        + "ingredientes (array con nombre y cantidad para " + porciones + " personas), "
+		        + "pasos (array de strings, maximo 5 pasos breves). "
+		        + "Si es MANUALIDAD responde en JSON con: tipo, nombre, dificultad, tiempo_estimado, "
+		        + "materiales (array con nombre y cantidad), "
+		        + "pasos (array de strings, maximo 5 pasos breves). "
+		        + "Responde SOLO el JSON, sin markdown. En español.\n\n"
+		        + "El usuario pide: " + prompt;
+
 	}
 
 	/**
@@ -248,13 +253,16 @@ public class IAService {
 				+ "Responde SOLO con JSON valido, sin markdown ni explicaciones. "
 				+ "Si es invalido responde EXACTAMENTE: "
 				+ "{\"error\":\"Lo que escribiste no corresponde a una receta de cocina ni a una manualidad valida. Por favor intenta de nuevo.\"}. "
-				+ "Si es RECETA responde con: tipo, nombre, porciones, tiempo_preparacion, calorias_por_porcion, "
-				+ "ingredientes (array con nombre y cantidad ajustado para " + porciones + " personas), "
-				+ "pasos (array de objetos con descripcion y tecnica, maximo 6 pasos breves). "
-				+ "Si es MANUALIDAD responde con: tipo, nombre, dificultad, tiempo_estimado, "
-				+ "materiales (array con nombre y cantidad), "
-				+ "pasos (array de objetos con descripcion, maximo 6 pasos breves). " + "Mensaje del usuario: "
-				+ prompt;
+				+ "Si es RECETA responde EXACTAMENTE con esta estructura: "
+				+ "{\"tipo\":\"RECETA\",\"nombre\":\"...\",\"porciones\":" + porciones + ",\"tiempo_preparacion\":\"...\","
+				+ "\"ingredientes\":[{\"nombre\":\"...\",\"cantidad\":\"...\"}],"
+				+ "\"pasos\":[\"paso 1 en una sola frase\",\"paso 2 en una sola frase\"]}. "
+				+ "Los pasos deben ser strings simples, NO objetos. Maximo 5 pasos. "
+				+ "Si es MANUALIDAD responde EXACTAMENTE con esta estructura: "
+				+ "{\"tipo\":\"MANUALIDAD\",\"nombre\":\"...\",\"dificultad\":\"...\",\"tiempo_estimado\":\"...\","
+				+ "\"materiales\":[{\"nombre\":\"...\",\"cantidad\":\"...\"}],"
+				+ "\"pasos\":[\"paso 1 en una sola frase\",\"paso 2 en una sola frase\"]}. "
+				+ "Mensaje del usuario: " + prompt;
 	}
 
 	/**
@@ -262,13 +270,16 @@ public class IAService {
 	 * económicas.
 	 */
 	private String construirPromptGemini(String prompt, String tipoReceta, Integer porciones) {
-		return "Eres un chef casero experto en recetas rapidas y economicas, y un experto en manualidades con materiales del hogar. "
-				+ "Primero detecta si el usuario pide una RECETA DE COCINA, una MANUALIDAD, o algo invalido. "
+		return "Eres un chef casero experto en recetas rapidas y un experto en manualidades. "
+				+ "Detecta si el usuario pide una RECETA DE COCINA, una MANUALIDAD, o algo invalido. "
 				+ "Si no tiene sentido responde SOLO con: {\"error\": \"Lo que escribiste no corresponde a una receta de cocina ni a una manualidad valida. Por favor intenta de nuevo.\"}. "
-				+ "Si es RECETA DE COCINA responde en JSON con: tipo, nombre, porciones, tiempo_preparacion, costo_aproximado, ingredientes faciles de conseguir con cantidades para "
-				+ porciones + " personas, pasos simplificados y sustituciones. "
-				+ "Si es MANUALIDAD responde en JSON con: tipo, nombre, dificultad, tiempo_estimado, materiales del hogar o economicos con cantidades, pasos simples y directos, y sustituciones_materiales. "
-				+ "Ajusta siempre las cantidades segun el numero de personas. Responde siempre en espanol.\n\n"
+				+ "Si es RECETA DE COCINA responde en JSON con: tipo, nombre, porciones, tiempo_preparacion, "
+				+ "ingredientes (array con nombre y cantidad para " + porciones + " personas), "
+				+ "pasos (array de strings, maximo 5 pasos breves y directos). "
+				+ "Si es MANUALIDAD responde en JSON con: tipo, nombre, dificultad, tiempo_estimado, "
+				+ "materiales (array con nombre y cantidad), "
+				+ "pasos (array de strings, maximo 5 pasos breves y directos). "
+				+ "Responde SOLO el JSON, sin markdown. En espanol.\n\n"
 				+ "El usuario pide: " + prompt;
 	}
 }
