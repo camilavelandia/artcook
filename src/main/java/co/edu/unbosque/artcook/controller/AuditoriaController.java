@@ -28,20 +28,21 @@ public class AuditoriaController {
 
     /**
      * Obtiene todos los registros de auditoría.
+     * Retorna siempre HTTP 200 con la lista completa o vacía para evitar
+     * que el frontend reciba null al usar HTTP 204 que no envía body.
      *
      * @return lista completa de registros de auditoría
      */
     @GetMapping("/mostrartodo")
     public ResponseEntity<List<AuditoriaDTO>> obtenerTodo() {
         List<AuditoriaDTO> lista = auditoriaService.getAll();
-        if (lista.isEmpty()) {
-            return new ResponseEntity<>(lista, HttpStatus.NO_CONTENT);
-        }
-        return new ResponseEntity<>(lista, HttpStatus.ACCEPTED);
+        return new ResponseEntity<>(lista, HttpStatus.OK);
     }
 
     /**
      * Obtiene los registros de auditoría de un usuario específico.
+     * Retorna siempre HTTP 200 con la lista completa o vacía para evitar
+     * que el frontend reciba null al usar HTTP 204 que no envía body.
      *
      * @param usuarioId ID del usuario a consultar
      * @return lista de registros del usuario
@@ -50,10 +51,7 @@ public class AuditoriaController {
     public ResponseEntity<List<AuditoriaDTO>> obtenerPorUsuario(@RequestParam Long usuarioId) {
         try {
             List<AuditoriaDTO> lista = auditoriaService.obtenerPorUsuario(usuarioId);
-            if (lista.isEmpty()) {
-                return new ResponseEntity<>(lista, HttpStatus.NO_CONTENT);
-            }
-            return new ResponseEntity<>(lista, HttpStatus.ACCEPTED);
+            return new ResponseEntity<>(lista, HttpStatus.OK);
         } catch (RegistroNoEncontradoException e) {
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
@@ -61,6 +59,8 @@ public class AuditoriaController {
 
     /**
      * Obtiene los registros de auditoría filtrados por tipo de acción.
+     * Retorna siempre HTTP 200 con la lista completa o vacía para evitar
+     * que el frontend reciba null al usar HTTP 204 que no envía body.
      *
      * @param accion acción a filtrar (LOGIN, REGISTRO, GENERAR_RECETA, etc.)
      * @return lista de registros con esa acción
@@ -68,14 +68,13 @@ public class AuditoriaController {
     @GetMapping("/poraccion")
     public ResponseEntity<List<AuditoriaDTO>> obtenerPorAccion(@RequestParam String accion) {
         List<AuditoriaDTO> lista = auditoriaService.obtenerPorAccion(accion);
-        if (lista.isEmpty()) {
-            return new ResponseEntity<>(lista, HttpStatus.NO_CONTENT);
-        }
-        return new ResponseEntity<>(lista, HttpStatus.ACCEPTED);
+        return new ResponseEntity<>(lista, HttpStatus.OK);
     }
 
     /**
      * Obtiene los registros de auditoría filtrados por entidad.
+     * Retorna siempre HTTP 200 con la lista completa o vacía para evitar
+     * que el frontend reciba null al usar HTTP 204 que no envía body.
      *
      * @param entidad nombre de la entidad (Usuario, Receta, IA, etc.)
      * @return lista de registros de esa entidad
@@ -83,14 +82,13 @@ public class AuditoriaController {
     @GetMapping("/porentidad")
     public ResponseEntity<List<AuditoriaDTO>> obtenerPorEntidad(@RequestParam String entidad) {
         List<AuditoriaDTO> lista = auditoriaService.obtenerPorEntidad(entidad);
-        if (lista.isEmpty()) {
-            return new ResponseEntity<>(lista, HttpStatus.NO_CONTENT);
-        }
-        return new ResponseEntity<>(lista, HttpStatus.ACCEPTED);
+        return new ResponseEntity<>(lista, HttpStatus.OK);
     }
 
     /**
      * Obtiene los registros de auditoría en un rango de fechas.
+     * Retorna siempre HTTP 200 con la lista completa o vacía para evitar
+     * que el frontend reciba null al usar HTTP 204 que no envía body.
      *
      * @param fechaInicio fecha de inicio en formato yyyy-MM-ddTHH:mm:ss
      * @param fechaFin    fecha de fin en formato yyyy-MM-ddTHH:mm:ss
@@ -103,10 +101,7 @@ public class AuditoriaController {
             LocalDateTime inicio = LocalDateTime.parse(fechaInicio);
             LocalDateTime fin = LocalDateTime.parse(fechaFin);
             List<AuditoriaDTO> lista = auditoriaService.obtenerPorRango(inicio, fin);
-            if (lista.isEmpty()) {
-                return new ResponseEntity<>(lista, HttpStatus.NO_CONTENT);
-            }
-            return new ResponseEntity<>(lista, HttpStatus.ACCEPTED);
+            return new ResponseEntity<>(lista, HttpStatus.OK);
         } catch (Exception e) {
             return new ResponseEntity<>(
                 "Formato de fecha invalido. Use el formato: yyyy-MM-ddTHH:mm:ss",
