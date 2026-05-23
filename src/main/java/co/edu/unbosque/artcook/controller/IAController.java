@@ -46,12 +46,6 @@ public class IAController {
 
     /**
      * Genera contenido usando OpenAI GPT con el prompt, tipo y porciones indicados.
-     *
-     * @param prompt     descripción de la receta o manualidad
-     * @param tipo       tipo de contenido: {@code COCINA} o {@code MANUALIDAD}
-     * @param usuarioId  ID del usuario que realiza la petición
-     * @param porciones  número de porciones deseado; por defecto 1
-     * @return contenido generado por GPT, o mensaje de error según el caso
      */
     @PostMapping("/generar-gpt")
     public ResponseEntity<?> generarConGPT(
@@ -73,12 +67,6 @@ public class IAController {
 
     /**
      * Genera contenido usando Google Gemini con el prompt, tipo y porciones indicados.
-     *
-     * @param prompt     descripción de la receta o manualidad
-     * @param tipo       tipo de contenido: {@code COCINA} o {@code MANUALIDAD}
-     * @param usuarioId  ID del usuario que realiza la petición
-     * @param porciones  número de porciones deseado; por defecto 1
-     * @return contenido generado por Gemini, o mensaje de error según el caso
      */
     @PostMapping("/generar-gemini")
     public ResponseEntity<?> generarConGemini(
@@ -100,12 +88,6 @@ public class IAController {
 
     /**
      * Genera contenido usando Anthropic Claude con el prompt, tipo y porciones indicados.
-     *
-     * @param prompt     descripción de la receta o manualidad
-     * @param tipo       tipo de contenido: {@code COCINA} o {@code MANUALIDAD}
-     * @param usuarioId  ID del usuario que realiza la petición
-     * @param porciones  número de porciones deseado; por defecto 1
-     * @return contenido generado por Claude, o mensaje de error según el caso
      */
     @PostMapping("/generar-claude")
     public ResponseEntity<?> generarConClaude(
@@ -126,19 +108,7 @@ public class IAController {
     }
 
     /**
-     * Genera contenido con la IA seleccionada por el usuario, persiste la receta
-     * en base de datos con {@code jsonRecetaSeleccionada} e {@code iaSeleccionada}
-     * ya establecidos, y retorna el contenido junto con el ID de la receta guardada
-     * para permitir la descarga inmediata del PDF.
-     *
-     * @param prompt          descripción de la receta o manualidad
-     * @param tipo            tipo de contenido: {@code COCINA} o {@code MANUALIDAD}
-     * @param porciones       número de porciones; por defecto 1 si no se envía
-     * @param usuarioId       ID del usuario que realiza la petición
-     * @param ia              IA a usar: {@code gpt}, {@code gemini} o {@code claude}
-     * @param titulo          título de la receta; si no se envía se usa el prompt
-     * @return objeto con {@code recetaId}, {@code contenido} e {@code ia} usada,
-     *         o mensaje de error según el caso
+     * Genera contenido con la IA seleccionada por el usuario.
      */
     @PostMapping("/generar")
     public ResponseEntity<?> generarConIASeleccionada(
@@ -196,21 +166,7 @@ public class IAController {
     }
 
     /**
-     * Genera contenido con las tres IAs en paralelo, persiste la receta en base
-     * de datos y retorna los tres contenidos junto con el ID de la receta guardada.
-     *
-     * <p>Si alguna IA no responde dentro del timeout de 30 segundos, su resultado
-     * se marca como no disponible y el resto se guarda normalmente. La primera IA
-     * disponible (en orden GPT → Gemini → Claude) se establece como seleccionada
-     * por defecto, de modo que la descarga del PDF siempre tenga contenido válido.</p>
-     *
-     * @param titulo     título de la receta o manualidad
-     * @param tipo       tipo de contenido: {@code COCINA} o {@code MANUALIDAD}
-     * @param prompt     descripción de la receta o manualidad
-     * @param porciones  número de porciones; requerido y mayor a 0 para COCINA
-     * @param usuarioId  ID del usuario que realiza la petición
-     * @return objeto con {@code recetaId} y los contenidos de las tres IAs,
-     *         junto con flags de éxito por IA, o mensaje de error según el caso
+     * Genera contenido con las tres IAs en paralelo.
      */
     @PostMapping("/generar-todas")
     public ResponseEntity<?> generarConTodasLasIAs(
@@ -220,9 +176,15 @@ public class IAController {
             @RequestParam(required = false) Integer porciones,
             @RequestParam long usuarioId) {
 
+        // valida el prompt antes de llamar las IAs
+        if (prompt == null || prompt.trim().length() < 10) {
+            return new ResponseEntity<>("El prompt debe tener al menos 10 caracteres.", HttpStatus.BAD_REQUEST);
+        }
+
         if (!tipo.equalsIgnoreCase("COCINA") && !tipo.equalsIgnoreCase("MANUALIDAD")) {
             return new ResponseEntity<>("El tipo debe ser COCINA o MANUALIDAD.", HttpStatus.BAD_REQUEST);
         }
+
         if (tipo.equalsIgnoreCase("COCINA") && (porciones == null || porciones <= 0)) {
             return new ResponseEntity<>("Las porciones deben ser mayor a 0.", HttpStatus.BAD_REQUEST);
         }
@@ -233,6 +195,7 @@ public class IAController {
             try {
                 return iaService.generarRecetaConGPT(prompt, tipo, porcionesFinales);
             } catch (Exception e) {
+                System.out.println("ERROR GPT: " + e.getMessage());
                 return null;
             }
         });
@@ -241,6 +204,7 @@ public class IAController {
             try {
                 return iaService.generarRecetaConGemini(prompt, tipo, porcionesFinales);
             } catch (Exception e) {
+                System.out.println("ERROR GEMINI: " + e.getMessage());
                 return null;
             }
         });
@@ -249,6 +213,7 @@ public class IAController {
             try {
                 return iaService.generarRecetaConClaude(prompt, tipo, porcionesFinales);
             } catch (Exception e) {
+                System.out.println("ERROR CLAUDE: " + e.getMessage());
                 return null;
             }
         });
@@ -256,14 +221,22 @@ public class IAController {
         try {
             CompletableFuture.allOf(futuroGPT, futuroGemini, futuroClaude).get(30, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
-            // se toma lo que llegó dentro del tiempo
+            System.out.println("Timeout - tomando lo que llegó");
         } catch (Exception e) {
-            // se continúa con los resultados parciales
+            System.out.println("Error en allOf: " + e.getMessage());
         }
 
-        String resultadoGPT    = futuroGPT.getNow("OpenAI no disponible.");
-        String resultadoGemini = futuroGemini.getNow("Gemini no disponible.");
-        String resultadoClaude = futuroClaude.getNow("Claude no disponible.");
+        String resultadoGPT    = futuroGPT.getNow(null);
+        String resultadoGemini = futuroGemini.getNow(null);
+        String resultadoClaude = futuroClaude.getNow(null);
+
+        // si las 3 IAs fallaron, retorna 503 en vez de guardar una receta vacía
+        if (resultadoGPT == null && resultadoGemini == null && resultadoClaude == null) {
+            return new ResponseEntity<>(
+                "Ninguna IA pudo generar la receta. Intenta con un prompt más descriptivo.",
+                HttpStatus.SERVICE_UNAVAILABLE
+            );
+        }
 
         TipoRecetaDTO tipoDTO = TipoRecetaDTO.valueOf(tipo.toUpperCase());
         RecetaDTO recetaDTO = new RecetaDTO(titulo, prompt, tipoDTO, porcionesFinales, usuarioId);
@@ -271,10 +244,11 @@ public class IAController {
         recetaDTO.setJsonRecetaGemini(resultadoGemini);
         recetaDTO.setJsonRecetaClaude(resultadoClaude);
 
-        if (resultadoGPT != null && !resultadoGPT.equals("OpenAI no disponible.")) {
+        // Asignar una receta seleccionada válida por defecto
+        if (resultadoGPT != null) {
             recetaDTO.setJsonRecetaSeleccionada(resultadoGPT);
             recetaDTO.setIaSeleccionada("gpt");
-        } else if (resultadoGemini != null && !resultadoGemini.equals("Gemini no disponible.")) {
+        } else if (resultadoGemini != null) {
             recetaDTO.setJsonRecetaSeleccionada(resultadoGemini);
             recetaDTO.setIaSeleccionada("gemini");
         } else {
@@ -287,8 +261,8 @@ public class IAController {
             return new ResponseEntity<>("Error al guardar la receta.", HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
-        auditoriaService.registrarAccion(usuarioId, "GENERAR_RECETA_TODAS_IAS", "Receta", recetaDTO.getId(),
-                "Receta generada con las 3 IAs. Prompt: " + prompt);
+        auditoriaService.registrarAccion(usuarioId, "GENERAR_RECETA_TODAS_IAS", "Receta",
+                recetaDTO.getId(), "Receta generada con las 3 IAs. Prompt: " + prompt);
 
         Map<String, Object> respuesta = new HashMap<>();
         respuesta.put("recetaId",      recetaDTO.getId());
@@ -296,19 +270,15 @@ public class IAController {
         respuesta.put("recetaGPT",     resultadoGPT);
         respuesta.put("recetaGemini",  resultadoGemini);
         respuesta.put("recetaClaude",  resultadoClaude);
-        respuesta.put("exitosaGPT",    resultadoGPT    != null && !resultadoGPT.equals("OpenAI no disponible."));
-        respuesta.put("exitosaGemini", resultadoGemini != null && !resultadoGemini.equals("Gemini no disponible."));
-        respuesta.put("exitosaClaude", resultadoClaude != null && !resultadoClaude.equals("Claude no disponible."));
+        respuesta.put("exitosaGPT",    resultadoGPT != null);
+        respuesta.put("exitosaGemini", resultadoGemini != null);
+        respuesta.put("exitosaClaude", resultadoClaude != null);
 
         return new ResponseEntity<>(respuesta, HttpStatus.CREATED);
     }
 
     /**
      * Genera una narración en texto para una receta existente usando GPT.
-     *
-     * @param textoReceta contenido de la receta sobre la que se genera la narración
-     * @param usuarioId   ID del usuario que realiza la petición
-     * @return narración generada, o mensaje de error según el caso
      */
     @PostMapping("/narracion")
     public ResponseEntity<?> generarNarracion(@RequestParam String textoReceta, @RequestParam long usuarioId) {
