@@ -133,14 +133,13 @@ public class UsuarioController {
 
     /**
      * Autentica un usuario con email y contraseña.
-     * Retorna los datos del usuario MÁS el token JWT para gestionar la sesión en el frontend.
-     * El frontend debe guardar este token y enviarlo en cada petición como:
-     * Authorization: Bearer {token}
+     * Retorna los datos del usuario junto con el token JWT para gestionar la sesión en el frontend.
+     * El frontend debe guardar este token y enviarlo en cada petición como Authorization: Bearer {token}.
      *
      * @param email      correo electrónico
      * @param contrasena contraseña
      * @param request    petición HTTP para auditoría
-     * @return mapa con el token JWT y los datos del usuario (LoginResponseDTO)
+     * @return mapa con el token JWT y los datos del usuario
      */
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestParam String email, @RequestParam String contrasena,
@@ -148,18 +147,14 @@ public class UsuarioController {
         try {
             LoginResponseDTO response = usuarioSer.login(email, contrasena);
 
-            // Carga el UserDetails para generar el token JWT
             Usuario usuario = usuarioRepo.findByEmail(email)
                     .orElseThrow(() -> new CredencialesInvalidasException());
 
-            // Genera el token JWT con el email, rol e ID del usuario
             String token = jwtUtil.generateToken(usuario);
 
-            // Registra el login en auditoría
             auditoriaService.registrarAccion(response.getId(), "LOGIN", "Usuario",
                     response.getId(), "Login exitoso.");
 
-            // Retorna tanto el token como los datos del usuario en un solo objeto
             Map<String, Object> resultado = new HashMap<>();
             resultado.put("token", token);
             resultado.put("tipo", "Bearer");

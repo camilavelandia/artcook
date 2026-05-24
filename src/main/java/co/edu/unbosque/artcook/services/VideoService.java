@@ -11,193 +11,246 @@ import java.io.*;
 import java.nio.file.*;
 import java.util.*;
 
+/**
+ * Servicio encargado de generar videos a partir del contenido de una receta.
+ * Coordina la generación de imágenes con Fal.ai, el audio con Deepgram
+ * y la combinación de ambos en un video final usando FFmpeg.
+ */
 @Service
 public class VideoService {
 
-	@Value("${app.falai.api-key}")
-	private String falAiApiKey;
+    /** Clave de API para el servicio de generación de imágenes Fal.ai. */
+    @Value("${app.falai.api-key}")
+    private String falAiApiKey;
 
-	@Value("${deepgram.api.key}")
-	private String deepgramApiKey;
+    /** Clave de API para el servicio de generación de audio Deepgram. */
+    @Value("${deepgram.api.key}")
+    private String deepgramApiKey;
 
-	@Value("${app.videos.path}")
-	private String videosPath;
+    /** Ruta del sistema de archivos donde se almacenan los videos generados. */
+    @Value("${app.videos.path}")
+    private String videosPath;
 
-	@Value("${app.ffmpeg.path}")
-	private String ffmpegPath;
+    /** Ruta del ejecutable de FFmpeg en el sistema. */
+    @Value("${app.ffmpeg.path}")
+    private String ffmpegPath;
 
-	private final RestTemplate restTemplate = new RestTemplate();
-	private final ObjectMapper objectMapper = new ObjectMapper();
+    /** Cliente HTTP para realizar peticiones a las APIs externas. */
+    private final RestTemplate restTemplate = new RestTemplate();
 
-	public String generarVideo(String jsonReceta, String nombreReceta) throws Exception {
+    /** Mapper para serializar y deserializar objetos JSON. */
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-		Files.createDirectories(Paths.get(videosPath));
+    /**
+     * Genera un video completo a partir del JSON de una receta.
+     * Extrae los pasos, genera una imagen por paso con Fal.ai,
+     * genera el audio con Deepgram y combina todo con FFmpeg.
+     *
+     * @param jsonReceta   contenido de la receta en formato JSON
+     * @param nombreReceta nombre de la receta para identificar el video generado
+     * @return nombre del archivo de video generado
+     * @throws Exception si ocurre un error durante cualquier etapa de la generación
+     */
+    public String generarVideo(String jsonReceta, String nombreReceta) throws Exception {
 
-		String jsonLimpio = jsonReceta.replaceAll("(?s)^```json\\s*", "").replaceAll("(?s)```\\s*$", "").trim();
+        Files.createDirectories(Paths.get(videosPath));
 
-		JsonNode raiz = objectMapper.readTree(jsonLimpio);
+        String jsonLimpio = jsonReceta.replaceAll("(?s)^```json\\s*", "").replaceAll("(?s)```\\s*$", "").trim();
 
-		String tipo = "";
-		if (raiz.has("tipo")) {
-			tipo = raiz.get("tipo").asText().toLowerCase();
-		}
+        JsonNode raiz = objectMapper.readTree(jsonLimpio);
 
-		JsonNode pasosNode = null;
-		if (raiz.has("pasos") && raiz.get("pasos").isArray()) {
-			pasosNode = raiz.get("pasos");
-		} else if (raiz.has("pasos_simplificados") && raiz.get("pasos_simplificados").isArray()) {
-			pasosNode = raiz.get("pasos_simplificados");
-		}
+        String tipo = "";
+        if (raiz.has("tipo")) {
+            tipo = raiz.get("tipo").asText().toLowerCase();
+        }
 
-		if (pasosNode == null) {
-			throw new Exception("No se encontraron pasos en el JSON de la receta.");
-		}
+        JsonNode pasosNode = null;
+        if (raiz.has("pasos") && raiz.get("pasos").isArray()) {
+            pasosNode = raiz.get("pasos");
+        } else if (raiz.has("pasos_simplificados") && raiz.get("pasos_simplificados").isArray()) {
+            pasosNode = raiz.get("pasos_simplificados");
+        }
 
-		String nombrePlato = nombreReceta;
-		if (raiz.has("nombre")) {
-			nombrePlato = raiz.get("nombre").asText();
-		}
+        if (pasosNode == null) {
+            throw new Exception("No se encontraron pasos en el JSON de la receta.");
+        }
 
-		List<String> textosPasos = new ArrayList<>();
-		List<String> promptsImagenes = new ArrayList<>();
+        String nombrePlato = nombreReceta;
+        if (raiz.has("nombre")) {
+            nombrePlato = raiz.get("nombre").asText();
+        }
 
-		for (JsonNode paso : pasosNode) {
-			if (paso.isTextual()) {
-				String textoPaso = paso.asText();
-				textosPasos.add(textoPaso);
-				promptsImagenes.add(textoPaso);
-			} else if (paso.isObject()) {
-				String descripcion = paso.has("descripcion") ? paso.get("descripcion").asText() : "";
-				String tecnica = paso.has("tecnica") ? paso.get("tecnica").asText() : "";
-				textosPasos.add(descripcion);
-				promptsImagenes.add(descripcion + (tecnica.isEmpty() ? "" : ". " + tecnica));
-			}
-		}
+        List<String> textosPasos = new ArrayList<>();
+        List<String> promptsImagenes = new ArrayList<>();
 
-		String carpetaVideo = videosPath + "/" + UUID.randomUUID();
-		Files.createDirectories(Paths.get(carpetaVideo));
+        for (JsonNode paso : pasosNode) {
+            if (paso.isTextual()) {
+                String textoPaso = paso.asText();
+                textosPasos.add(textoPaso);
+                promptsImagenes.add(textoPaso);
+            } else if (paso.isObject()) {
+                String descripcion = paso.has("descripcion") ? paso.get("descripcion").asText() : "";
+                String tecnica = paso.has("tecnica") ? paso.get("tecnica").asText() : "";
+                textosPasos.add(descripcion);
+                promptsImagenes.add(descripcion + (tecnica.isEmpty() ? "" : ". " + tecnica));
+            }
+        }
 
-		List<String> rutasImagenes = new ArrayList<>();
-		for (int i = 0; i < promptsImagenes.size(); i++) {
-			String rutaImagen = generarImagenConFalAi(promptsImagenes.get(i), nombrePlato, carpetaVideo, i, tipo);
-			rutasImagenes.add(rutaImagen);
-		}
+        String carpetaVideo = videosPath + "/" + UUID.randomUUID();
+        Files.createDirectories(Paths.get(carpetaVideo));
 
-		String textoCompleto = String.join(". ", textosPasos);
-		String rutaAudio = generarAudioConDeepgram(textoCompleto, carpetaVideo);
+        List<String> rutasImagenes = new ArrayList<>();
+        for (int i = 0; i < promptsImagenes.size(); i++) {
+            String rutaImagen = generarImagenConFalAi(promptsImagenes.get(i), nombrePlato, carpetaVideo, i, tipo);
+            rutasImagenes.add(rutaImagen);
+        }
 
-		return combinarConFFmpeg(rutasImagenes, rutaAudio, carpetaVideo, nombreReceta);
-	}
+        String textoCompleto = String.join(". ", textosPasos);
+        String rutaAudio = generarAudioConDeepgram(textoCompleto, carpetaVideo);
 
-	private String generarImagenConFalAi(String textoPaso, String nombrePlato, String carpeta, int indice, String tipo)
-			throws Exception {
+        return combinarConFFmpeg(rutasImagenes, rutaAudio, carpetaVideo, nombreReceta);
+    }
 
-		String url = "https://fal.run/fal-ai/flux/dev";
+    /**
+     * Genera una imagen para un paso de la receta usando la API de Fal.ai.
+     * Adapta el prompt según si la receta es de cocina o manualidad.
+     *
+     * @param textoPaso  descripción del paso a ilustrar
+     * @param nombrePlato nombre del plato o manualidad
+     * @param carpeta    ruta de la carpeta donde se guarda la imagen
+     * @param indice     número del paso para nombrar el archivo
+     * @param tipo       tipo de receta para adaptar el estilo de la imagen
+     * @return ruta local donde se guardó la imagen generada
+     * @throws Exception si ocurre un error al llamar la API o guardar la imagen
+     */
+    private String generarImagenConFalAi(String textoPaso, String nombrePlato, String carpeta, int indice, String tipo)
+            throws Exception {
 
-		HttpHeaders headers = new HttpHeaders();
-		headers.setContentType(MediaType.APPLICATION_JSON);
-		headers.set("Authorization", "Key " + falAiApiKey);
+        String url = "https://fal.run/fal-ai/flux/dev";
 
-		String prompt;
-		if (tipo.contains("manualidad") || tipo.contains("craft") || tipo.contains("art")) {
-			prompt = "Professional craft photography of a DIY project called " + nombrePlato + ". "
-					+ "Step shown: " + textoPaso + ". "
-					+ "Close-up shot, natural lighting, hands crafting, workshop table background, "
-					+ "craft materials visible, high resolution, editorial style, warm tones.";
-		} else {
-			prompt = "Professional food photography of " + nombrePlato + ". "
-					+ "Step shown: " + textoPaso + ". "
-					+ "Close-up shot, natural lighting, appetizing presentation, "
-					+ "rustic kitchen background, soft bokeh, warm tones, high resolution, editorial food photo.";
-		}
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("Authorization", "Key " + falAiApiKey);
 
-		Map<String, Object> body = new HashMap<>();
-		body.put("prompt", prompt);
-		body.put("image_size", "landscape_16_9");
-		body.put("num_images", 1);
+        String prompt;
+        if (tipo.contains("manualidad") || tipo.contains("craft") || tipo.contains("art")) {
+            prompt = "Professional craft photography of a DIY project called " + nombrePlato + ". "
+                    + "Step shown: " + textoPaso + ". "
+                    + "Close-up shot, natural lighting, hands crafting, workshop table background, "
+                    + "craft materials visible, high resolution, editorial style, warm tones.";
+        } else {
+            prompt = "Professional food photography of " + nombrePlato + ". "
+                    + "Step shown: " + textoPaso + ". "
+                    + "Close-up shot, natural lighting, appetizing presentation, "
+                    + "rustic kitchen background, soft bokeh, warm tones, high resolution, editorial food photo.";
+        }
 
-		HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+        Map<String, Object> body = new HashMap<>();
+        body.put("prompt", prompt);
+        body.put("image_size", "landscape_16_9");
+        body.put("num_images", 1);
 
-		ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, request, String.class);
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 
-		JsonNode respuestaJson = objectMapper.readTree(response.getBody());
-		String urlImagen = respuestaJson.get("images").get(0).get("url").asText();
+        ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, request, String.class);
 
-		String rutaImagen = carpeta + "/paso_" + indice + ".jpg";
-		byte[] imagenBytes = restTemplate.getForObject(urlImagen, byte[].class);
-		Files.write(Paths.get(rutaImagen), imagenBytes);
+        JsonNode respuestaJson = objectMapper.readTree(response.getBody());
+        String urlImagen = respuestaJson.get("images").get(0).get("url").asText();
 
-		return rutaImagen;
-	}
+        String rutaImagen = carpeta + "/paso_" + indice + ".jpg";
+        byte[] imagenBytes = restTemplate.getForObject(urlImagen, byte[].class);
+        Files.write(Paths.get(rutaImagen), imagenBytes);
 
-	private String generarAudioConDeepgram(String texto, String carpeta) throws Exception {
+        return rutaImagen;
+    }
 
-		try {
-			String url = "https://api.deepgram.com/v1/speak?model=aura-2-celeste-es";
+    /**
+     * Genera un archivo de audio a partir del texto de los pasos usando la API de Deepgram.
+     *
+     * @param texto   texto completo de los pasos de la receta
+     * @param carpeta ruta de la carpeta donde se guarda el audio generado
+     * @return ruta local donde se guardó el archivo de audio
+     * @throws Exception si ocurre un error al llamar la API o guardar el audio
+     */
+    private String generarAudioConDeepgram(String texto, String carpeta) throws Exception {
 
-			HttpHeaders headers = new HttpHeaders();
-			headers.setContentType(MediaType.APPLICATION_JSON);
-			headers.set("Authorization", "Token " + deepgramApiKey);
+        try {
+            String url = "https://api.deepgram.com/v1/speak?model=aura-2-celeste-es";
 
-			Map<String, String> body = new HashMap<>();
-			body.put("text", texto);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("Authorization", "Token " + deepgramApiKey);
 
-			HttpEntity<Map<String, String>> request = new HttpEntity<>(body, headers);
+            Map<String, String> body = new HashMap<>();
+            body.put("text", texto);
 
-			ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.POST, request, byte[].class);
+            HttpEntity<Map<String, String>> request = new HttpEntity<>(body, headers);
 
-			String rutaAudio = carpeta + "/audio.mp3";
-			Files.write(Paths.get(rutaAudio), response.getBody());
+            ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.POST, request, byte[].class);
 
-			return rutaAudio;
+            String rutaAudio = carpeta + "/audio.mp3";
+            Files.write(Paths.get(rutaAudio), response.getBody());
 
-		} catch (Exception e) {
-			throw new RuntimeException("Error al generar el audio con Deepgram: " + e.getMessage(), e);
-		}
-	}
+            return rutaAudio;
 
-	private String combinarConFFmpeg(List<String> rutasImagenes, String rutaAudio, String carpeta, String nombreReceta)
-			throws Exception {
+        } catch (Exception e) {
+            throw new RuntimeException("Error al generar el audio con Deepgram: " + e.getMessage(), e);
+        }
+    }
 
-		String archivoLista = carpeta + "/imagenes.txt";
-		StringBuilder lista = new StringBuilder();
+    /**
+     * Combina las imágenes y el audio generados en un video usando FFmpeg.
+     * Cada imagen se muestra durante cinco segundos en el video final.
+     *
+     * @param rutasImagenes lista de rutas locales de las imágenes generadas
+     * @param rutaAudio     ruta local del archivo de audio generado
+     * @param carpeta       ruta de la carpeta de trabajo temporal
+     * @param nombreReceta  nombre de la receta para nombrar el archivo de video
+     * @return nombre del archivo de video generado
+     * @throws Exception si FFmpeg retorna un error durante el procesamiento
+     */
+    private String combinarConFFmpeg(List<String> rutasImagenes, String rutaAudio, String carpeta, String nombreReceta)
+            throws Exception {
 
-		int segundosPorPaso = 5;
-		for (String rutaImagen : rutasImagenes) {
-			lista.append("file '").append(Paths.get(rutaImagen).toAbsolutePath().toString().replace("\\", "/"))
-					.append("'\n");
-			lista.append("duration ").append(segundosPorPaso).append("\n");
-		}
-		lista.append("file '")
-				.append(Paths.get(rutasImagenes.get(rutasImagenes.size() - 1)).toAbsolutePath().toString()
-						.replace("\\", "/"))
-				.append("'\n");
+        String archivoLista = carpeta + "/imagenes.txt";
+        StringBuilder lista = new StringBuilder();
 
-		Files.writeString(Paths.get(archivoLista), lista.toString());
+        int segundosPorPaso = 5;
+        for (String rutaImagen : rutasImagenes) {
+            lista.append("file '").append(Paths.get(rutaImagen).toAbsolutePath().toString().replace("\\", "/"))
+                    .append("'\n");
+            lista.append("duration ").append(segundosPorPaso).append("\n");
+        }
+        lista.append("file '")
+                .append(Paths.get(rutasImagenes.get(rutasImagenes.size() - 1)).toAbsolutePath().toString()
+                        .replace("\\", "/"))
+                .append("'\n");
 
-		String nombreArchivo = nombreReceta.replaceAll("[^a-zA-Z0-9]", "_").toLowerCase();
-		String rutaVideo = Paths.get(videosPath).toAbsolutePath() + "/" + nombreArchivo + "_" + UUID.randomUUID()
-				+ ".mp4";
+        Files.writeString(Paths.get(archivoLista), lista.toString());
 
-		List<String> comando = List.of(
-				ffmpegPath, "-f", "concat", "-safe", "0",
-				"-i", Paths.get(archivoLista).toAbsolutePath().toString().replace("\\", "/"),
-				"-i", Paths.get(rutaAudio).toAbsolutePath().toString().replace("\\", "/"),
-				"-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p",
-				"-y", rutaVideo.replace("\\", "/")
-		);
+        String nombreArchivo = nombreReceta.replaceAll("[^a-zA-Z0-9]", "_").toLowerCase();
+        String rutaVideo = Paths.get(videosPath).toAbsolutePath() + "/" + nombreArchivo + "_" + UUID.randomUUID()
+                + ".mp4";
 
-		ProcessBuilder processBuilder = new ProcessBuilder(comando);
-		processBuilder.redirectErrorStream(true);
-		Process proceso = processBuilder.start();
+        List<String> comando = List.of(
+                ffmpegPath, "-f", "concat", "-safe", "0",
+                "-i", Paths.get(archivoLista).toAbsolutePath().toString().replace("\\", "/"),
+                "-i", Paths.get(rutaAudio).toAbsolutePath().toString().replace("\\", "/"),
+                "-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p",
+                "-y", rutaVideo.replace("\\", "/")
+        );
 
-		String salidaFFmpeg = new String(proceso.getInputStream().readAllBytes());
-		int codigoSalida = proceso.waitFor();
+        ProcessBuilder processBuilder = new ProcessBuilder(comando);
+        processBuilder.redirectErrorStream(true);
+        Process proceso = processBuilder.start();
 
-		if (codigoSalida != 0) {
-			throw new RuntimeException("Error al procesar el video con FFmpeg: " + salidaFFmpeg);
-		}
+        String salidaFFmpeg = new String(proceso.getInputStream().readAllBytes());
+        int codigoSalida = proceso.waitFor();
 
-		return Paths.get(rutaVideo).getFileName().toString();
-	}
+        if (codigoSalida != 0) {
+            throw new RuntimeException("Error al procesar el video con FFmpeg: " + salidaFFmpeg);
+        }
+
+        return Paths.get(rutaVideo).getFileName().toString();
+    }
 }
