@@ -18,29 +18,59 @@ import co.edu.unbosque.artcook.exception.LanzadorExcepciones;
 import co.edu.unbosque.artcook.exception.PromptVacioException;
 
 /**
- * Servicio que gestiona las llamadas a las tres IAs del sistema.
- * Conecta con OpenAI (GPT), Google (Gemini) y Anthropic (Claude).
+ * Servicio encargado de gestionar las llamadas a las inteligencias artificiales
+ * usadas por la aplicacion.
+ *
+ * <p>
+ * Este servicio se conecta con OpenAI, Gemini y Claude para generar recetas de
+ * cocina, manualidades y narraciones. Las API keys se cargan desde
+ * {@code application.properties} mediante {@link Value}, por lo que no deben
+ * escribirse directamente en esta clase.
+ * </p>
+ *
+ * <p>
+ * Tambien construye prompts estrictos para evitar que una receta sea generada en
+ * el campo de manualidades o que una manualidad sea generada en el campo de
+ * recetas.
+ * </p>
  */
 @Service
 public class IAService {
 
-	@Value("${app.openai.api-key:pending}")
+	/**
+	 * API key de OpenAI cargada desde application.properties.
+	 */
+	@Value("${app.openai.api-key}")
 	private String openAiApiKey;
 
-	@Value("${app.gemini.api-key:pending}")
+	/**
+	 * API key de Gemini cargada desde application.properties.
+	 */
+	@Value("${app.gemini.api-key}")
 	private String geminiApiKey;
 
-	@Value("${app.claude.api-key:pending}")
+	/**
+	 * API key de Claude cargada desde application.properties.
+	 */
+	@Value("${app.claude.api-key}")
 	private String claudeApiKey;
 
+	/**
+	 * Cliente HTTP usado para realizar las peticiones a las APIs externas.
+	 */
 	private final RestTemplate restTemplate = crearRestTemplateConTimeout();
 
 	/**
-	 * Constructor por defecto.
+	 * Constructor por defecto del servicio.
 	 */
 	public IAService() {
 	}
 
+	/**
+	 * Crea un {@link RestTemplate} con tiempos maximos de conexion y lectura.
+	 *
+	 * @return instancia de RestTemplate configurada con timeout
+	 */
 	private static RestTemplate crearRestTemplateConTimeout() {
 		SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
 		factory.setConnectTimeout(10_000);
@@ -49,19 +79,65 @@ public class IAService {
 	}
 
 	/**
-	 * Genera contenido usando OpenAI GPT con el prompt dado.
+	 * Verifica si una API key esta vacia, nula o sin configurar.
 	 *
-	 * @param prompt     prompt de la receta o manualidad
-	 * @param tipoReceta tipo de receta (COCINA o MANUALIDAD)
-	 * @param porciones  número de porciones
-	 * @return contenido generado por GPT
-	 * @throws PromptVacioException si el prompt es nulo, vacío o muy corto
+	 * @param apiKey API key a validar
+	 * @return true si la API key no esta configurada, false en caso contrario
+	 */
+	private boolean apiKeyNoConfigurada(String apiKey) {
+		return apiKey == null || apiKey.isBlank();
+	}
+
+	/**
+	 * Determina si el tipo recibido corresponde a una manualidad.
+	 *
+	 * @param tipoReceta tipo enviado desde el formulario
+	 * @return true si el tipo es MANUALIDAD, false en caso contrario
+	 */
+	private boolean esManualidad(String tipoReceta) {
+		return tipoReceta != null && tipoReceta.equalsIgnoreCase("MANUALIDAD");
+	}
+
+	/**
+	 * Obtiene la categoria esperada segun el tipo seleccionado por el usuario.
+	 *
+	 * @param tipoReceta tipo enviado desde el formulario
+	 * @return MANUALIDAD si el campo es de manualidades, RECETA en caso contrario
+	 */
+	private String categoriaEsperada(String tipoReceta) {
+		return esManualidad(tipoReceta) ? "MANUALIDAD" : "RECETA";
+	}
+
+	/**
+	 * Construye el mensaje de error cuando el usuario escribe contenido en el
+	 * campo equivocado.
+	 *
+	 * @param tipoReceta tipo enviado desde el formulario
+	 * @return mensaje de error segun la categoria esperada
+	 */
+	private String mensajeErrorCategoria(String tipoReceta) {
+		if (esManualidad(tipoReceta)) {
+			return "Este campo solo recibe manualidades. No escribas recetas de cocina aqui. Por favor intenta de nuevo.";
+		}
+		return "Este campo solo recibe recetas de cocina. No escribas manualidades aqui. Por favor intenta de nuevo.";
+	}
+
+	/**
+	 * Genera una receta o manualidad usando OpenAI GPT.
+	 *
+	 * @param prompt descripcion escrita por el usuario
+	 * @param tipoReceta tipo de contenido esperado, RECETA o MANUALIDAD
+	 * @param porciones numero de porciones para recetas de cocina
+	 * @return respuesta generada por OpenAI en formato JSON o mensaje de error
+	 * @throws PromptVacioException si el prompt esta vacio o no cumple la validacion
 	 */
 	public String generarRecetaConGPT(String prompt, String tipoReceta, Integer porciones) throws PromptVacioException {
 		LanzadorExcepciones.validarPrompt(prompt);
-		if (openAiApiKey.equals("pending")) {
+
+		if (apiKeyNoConfigurada(openAiApiKey)) {
 			return "OpenAI no esta configurado aun.";
 		}
+
 		try {
 			String url = "https://api.openai.com/v1/chat/completions";
 			HttpHeaders headers = new HttpHeaders();
@@ -87,34 +163,29 @@ public class IAService {
 	}
 
 	/**
-	 * Genera contenido usando Google Gemini con el prompt dado.
+	 * Genera una receta o manualidad usando Google Gemini.
 	 *
-	 * <p>Intenta primero con {@code gemini-2.5-flash} y, si falla por cuota o
-	 * disponibilidad, cae en {@code gemini-2.5-flash-lite} como respaldo.</p>
+	 * <p>
+	 * Primero intenta usar {@code gemini-2.5-flash}. Si falla por cuota o
+	 * disponibilidad, intenta con {@code gemini-2.5-flash-lite}.
+	 * </p>
 	 *
-	 * <p>El modelo {@code gemini-2.5-flash} tiene razonamiento interno habilitado
-	 * por defecto. Ese razonamiento consume tokens del mismo presupuesto de
-	 * {@code maxOutputTokens}, dejando muy pocos tokens disponibles para la
-	 * respuesta real y provocando que el JSON quede truncado. Por ello se
-	 * desactiva el thinking mediante {@code thinkingConfig: {thinkingBudget: 0}},
-	 * de modo que todos los tokens se destinen íntegramente al JSON de la receta.</p>
+	 * <p>
+	 * El prompt obliga a Gemini a respetar el campo actual: recetas solo en el
+	 * campo de recetas y manualidades solo en el campo de manualidades.
+	 * </p>
 	 *
-	 * <p>Como medida de defensa adicional, este método itera sobre todas las partes
-	 * de la respuesta y extrae únicamente aquella donde {@code thought} es
-	 * {@code null} o {@code false}. También limpia posibles bloques de markdown
-	 * y extrae el objeto JSON en caso de que Gemini incluya texto adicional
-	 * alrededor.</p>
-	 *
-	 * @param prompt     prompt de la receta o manualidad
-	 * @param tipoReceta tipo de receta (COCINA o MANUALIDAD)
-	 * @param porciones  número de porciones
-	 * @return contenido JSON generado por Gemini
-	 * @throws PromptVacioException si el prompt es nulo, vacío o muy corto
+	 * @param prompt descripcion escrita por el usuario
+	 * @param tipoReceta tipo de contenido esperado, RECETA o MANUALIDAD
+	 * @param porciones numero de porciones para recetas de cocina
+	 * @return respuesta generada por Gemini en formato JSON o mensaje de error
+	 * @throws PromptVacioException si el prompt esta vacio o no cumple la validacion
 	 */
 	public String generarRecetaConGemini(String prompt, String tipoReceta, Integer porciones)
 			throws PromptVacioException {
 		LanzadorExcepciones.validarPrompt(prompt);
-		if (geminiApiKey.equals("pending")) {
+
+		if (apiKeyNoConfigurada(geminiApiKey)) {
 			return "Gemini no esta configurado aun.";
 		}
 
@@ -133,7 +204,7 @@ public class IAService {
 						"contents", List.of(Map.of("parts", List.of(Map.of("text", construirPromptGemini(prompt, tipoReceta, porciones))))),
 						"generationConfig", Map.of(
 								"maxOutputTokens", 2000,
-								"temperature", 0.7,
+								"temperature", 0.2,
 								"thinkingConfig", Map.of("thinkingBudget", 0)));
 
 				HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
@@ -174,9 +245,11 @@ public class IAService {
 			} catch (org.springframework.web.client.HttpStatusCodeException e) {
 				int codigo = e.getStatusCode().value();
 				System.out.println("GEMINI fallo con " + modelo + " - HTTP " + codigo);
+
 				if (codigo == 429 || codigo == 503) {
 					continue;
 				}
+
 				return "Error al conectar con Gemini por superar limite gratuito: " + e.getMessage();
 
 			} catch (Exception e) {
@@ -189,20 +262,22 @@ public class IAService {
 	}
 
 	/**
-	 * Genera contenido usando Anthropic Claude con el prompt dado.
+	 * Genera una receta o manualidad usando Anthropic Claude.
 	 *
-	 * @param prompt     prompt de la receta o manualidad
-	 * @param tipoReceta tipo de receta (COCINA o MANUALIDAD)
-	 * @param porciones  número de porciones
-	 * @return contenido generado por Claude
-	 * @throws PromptVacioException si el prompt es nulo, vacío o muy corto
+	 * @param prompt descripcion escrita por el usuario
+	 * @param tipoReceta tipo de contenido esperado, RECETA o MANUALIDAD
+	 * @param porciones numero de porciones para recetas de cocina
+	 * @return respuesta generada por Claude en formato JSON o mensaje de error
+	 * @throws PromptVacioException si el prompt esta vacio o no cumple la validacion
 	 */
 	public String generarRecetaConClaude(String prompt, String tipoReceta, Integer porciones)
 			throws PromptVacioException {
 		LanzadorExcepciones.validarPrompt(prompt);
-		if (claudeApiKey.equals("pending")) {
+
+		if (apiKeyNoConfigurada(claudeApiKey)) {
 			return "Claude no esta configurado aun.";
 		}
+
 		try {
 			String url = "https://api.anthropic.com/v1/messages";
 			HttpHeaders headers = new HttpHeaders();
@@ -224,9 +299,11 @@ public class IAService {
 
 		} catch (org.springframework.web.client.HttpStatusCodeException e) {
 			int codigo = e.getStatusCode().value();
+
 			if (codigo == 529 || codigo == 503 || codigo == 429) {
 				return "Claude no esta disponible en este momento. Intenta de nuevo en unos minutos.";
 			}
+
 			return "Error al conectar con Claude: " + e.getMessage();
 
 		} catch (Exception e) {
@@ -235,131 +312,192 @@ public class IAService {
 	}
 
 	/**
-	 * Genera una narración a partir del texto de una receta seleccionada.
+	 * Genera una narracion clara y amigable a partir del texto de una receta.
 	 *
-	 * @param textoReceta texto de la receta para generar la narración
-	 * @return narración generada
-	 * @throws CampoVacioException si el texto de la receta está vacío
+	 * @param textoReceta texto base de la receta
+	 * @return narracion generada o mensaje de error
+	 * @throws CampoVacioException si el texto de la receta esta vacio
 	 */
 	public String generarNarracionConIA(String textoReceta) throws CampoVacioException {
 		LanzadorExcepciones.validarCampoVacio(textoReceta, "textoReceta");
+
 		try {
-			return generarRecetaConGPT("Genera una narración clara y amigable para esta receta: " + textoReceta, "COCINA", 1);
+			return generarRecetaConGPT("Genera una narracion clara y amigable para esta receta: " + textoReceta, "COCINA", 1);
 		} catch (PromptVacioException e) {
 			return "No se pudo generar la narracion.";
 		}
 	}
 
 	/**
-	 * Verifica si todas las IAs están configuradas con sus API keys.
+	 * Verifica si las tres API keys estan configuradas.
 	 *
-	 * @return true si todas las IAs tienen API key configurada
+	 * @return true si OpenAI, Gemini y Claude tienen API key, false en caso contrario
 	 */
 	public boolean verificarConexion() {
-		return !openAiApiKey.equals("pending") && !geminiApiKey.equals("pending") && !claudeApiKey.equals("pending");
+		return !apiKeyNoConfigurada(openAiApiKey)
+				&& !apiKeyNoConfigurada(geminiApiKey)
+				&& !apiKeyNoConfigurada(claudeApiKey);
 	}
 
 	/**
-	 * Retorna la key de Gemini para diagnóstico.
+	 * Retorna un mensaje de diagnostico sobre Gemini sin exponer la API key real.
 	 *
-	 * @return key de Gemini
+	 * @return estado de configuracion de Gemini
 	 */
 	public String getGeminiKey() {
-		return geminiApiKey;
+		return apiKeyNoConfigurada(geminiApiKey) ? "Gemini no configurado" : "Gemini configurado";
 	}
 
 	/**
-	 * Construye el prompt para OpenAI GPT.
+	 * Construye el prompt para OpenAI GPT segun la categoria esperada.
 	 *
-	 * <p>Instruye al modelo para responder como chef experto o manualista,
-	 * con los ingredientes escalados para el número de porciones indicado.</p>
-	 *
-	 * @param prompt     descripción del plato o manualidad
-	 * @param tipoReceta tipo de receta (COCINA o MANUALIDAD)
-	 * @param porciones  número de porciones deseado
-	 * @return prompt listo para enviar a la API de OpenAI
+	 * @param prompt descripcion escrita por el usuario
+	 * @param tipoReceta tipo de contenido esperado
+	 * @param porciones numero de porciones para recetas
+	 * @return prompt final para OpenAI
 	 */
 	private String construirPromptGPT(String prompt, String tipoReceta, Integer porciones) {
-		return "Eres un experto en recetas de cocina y manualidades creativas. "
-				+ "El usuario puede pedir una RECETA DE COCINA o una MANUALIDAD. "
-				+ "Interpreta SIEMPRE la solicitud de forma positiva — si menciona algo que se puede hacer con las manos, es una manualidad válida. "
-				+ "Solo responde con error JSON si la solicitud es completamente absurda (ej: 'el cielo es azul', 'hola'). "
-				+ "Si es RECETA DE COCINA responde en JSON con: tipo, nombre, porciones, tiempo_preparacion, dificultad, "
-				+ "ingredientes (array con nombre y cantidad para " + porciones + " personas), "
-				+ "pasos (array de strings, maximo 5 pasos breves). "
-				+ "Si es MANUALIDAD responde en JSON con: tipo, nombre, dificultad, tiempo_estimado, "
-				+ "materiales (array con nombre y cantidad), "
-				+ "pasos (array de strings, maximo 5 pasos breves). "
-				+ "Responde SOLO el JSON, sin markdown. En español.\n\n"
-				+ "El usuario pide: " + prompt;
+		String categoria = categoriaEsperada(tipoReceta);
+		String error = mensajeErrorCategoria(tipoReceta);
+
+		if ("MANUALIDAD".equals(categoria)) {
+			return "Eres un experto en manualidades creativas. "
+					+ "Este campo es EXCLUSIVAMENTE para MANUALIDADES. "
+					+ "Antes de responder, verifica estrictamente si la solicitud del usuario corresponde a una manualidad. "
+					+ "Una manualidad es un objeto, decoracion, arte, arreglo o proyecto hecho con materiales y pasos manuales. "
+					+ "NO aceptes recetas de cocina, comidas, bebidas, postres, preparaciones comestibles ni instrucciones para cocinar. "
+					+ "Si el usuario pide una receta de cocina o algo que no sea una manualidad, responde EXACTAMENTE: "
+					+ "{\"error\":\"" + error + "\"}. "
+					+ "Si es una manualidad valida, responde SOLO en JSON con esta estructura: "
+					+ "{\"tipo\":\"MANUALIDAD\",\"nombre\":\"...\",\"dificultad\":\"...\",\"tiempo_estimado\":\"...\","
+					+ "\"materiales\":[{\"nombre\":\"...\",\"cantidad\":\"...\"}],"
+					+ "\"pasos\":[\"paso 1 en una sola frase\",\"paso 2 en una sola frase\"]}. "
+					+ "El campo tipo DEBE ser exactamente MANUALIDAD. "
+					+ "Maximo 5 pasos. Responde en espanol, solo JSON, sin markdown.\n\n"
+					+ "Solicitud del usuario: " + prompt;
+		}
+
+		return "Eres un chef experto en recetas de cocina. "
+				+ "Este campo es EXCLUSIVAMENTE para RECETAS DE COCINA. "
+				+ "Antes de responder, verifica estrictamente si la solicitud del usuario corresponde a una receta de cocina. "
+				+ "Una receta de cocina es una preparacion comestible o bebida con ingredientes y pasos de preparacion. "
+				+ "NO aceptes manualidades, decoraciones, objetos, arreglos, proyectos artisticos ni trabajos con materiales no comestibles. "
+				+ "Si el usuario pide una manualidad o algo que no sea una receta de cocina, responde EXACTAMENTE: "
+				+ "{\"error\":\"" + error + "\"}. "
+				+ "Si es una receta valida, responde SOLO en JSON con esta estructura: "
+				+ "{\"tipo\":\"RECETA\",\"nombre\":\"...\",\"porciones\":" + porciones + ",\"tiempo_preparacion\":\"...\",\"dificultad\":\"...\","
+				+ "\"ingredientes\":[{\"nombre\":\"...\",\"cantidad\":\"cantidad para " + porciones + " personas\"}],"
+				+ "\"pasos\":[\"paso 1 en una sola frase\",\"paso 2 en una sola frase\"]}. "
+				+ "El campo tipo DEBE ser exactamente RECETA. "
+				+ "El campo porciones DEBE ser exactamente " + porciones + ". "
+				+ "Las cantidades de ingredientes deben estar calculadas para " + porciones + " personas. "
+				+ "Maximo 5 pasos. Responde en espanol, solo JSON, sin markdown.\n\n"
+				+ "Solicitud del usuario: " + prompt;
 	}
 
 	/**
-	 * Construye el prompt para Anthropic Claude.
+	 * Construye el prompt para Anthropic Claude segun la categoria esperada.
 	 *
-	 * <p>Embebe el número de porciones directamente en la plantilla JSON del ejemplo
-	 * e instruye explícitamente que los ingredientes deben escalarse para ese número
-	 * de personas, corrigiendo el comportamiento de devolver siempre 1 porción.</p>
-	 *
-	 * @param prompt     descripción del plato o manualidad
-	 * @param tipoReceta tipo de receta (COCINA o MANUALIDAD)
-	 * @param porciones  número de porciones deseado
-	 * @return prompt listo para enviar a la API de Anthropic
+	 * @param prompt descripcion escrita por el usuario
+	 * @param tipoReceta tipo de contenido esperado
+	 * @param porciones numero de porciones para recetas
+	 * @return prompt final para Claude
 	 */
 	private String construirPromptClaude(String prompt, String tipoReceta, Integer porciones) {
-		return "Eres un asistente experto en recetas de cocina y manualidades. "
-				+ "Detecta si el usuario pide una RECETA, una MANUALIDAD o algo INVALIDO. "
-				+ "Responde SOLO con JSON valido, sin markdown ni texto adicional antes o despues del JSON. "
-				+ "Si es invalido responde EXACTAMENTE: "
-				+ "{\"error\":\"Lo que escribiste no corresponde a una receta de cocina ni a una manualidad valida. Por favor intenta de nuevo.\"}. "
-				+ "Si es RECETA responde EXACTAMENTE con esta estructura: "
-				+ "{\"tipo\":\"RECETA\",\"nombre\":\"...\",\"porciones\":" + porciones + ",\"tiempo_preparacion\":\"...\","
+		String categoria = categoriaEsperada(tipoReceta);
+		String error = mensajeErrorCategoria(tipoReceta);
+
+		if ("MANUALIDAD".equals(categoria)) {
+			return "Eres un asistente experto UNICAMENTE en manualidades. "
+					+ "El campo actual solo permite MANUALIDADES. "
+					+ "Debes rechazar cualquier receta de cocina, comida, bebida, postre o preparacion comestible. "
+					+ "Si la solicitud no es una manualidad valida, responde EXACTAMENTE: "
+					+ "{\"error\":\"" + error + "\"}. "
+					+ "Si es una manualidad valida, responde EXACTAMENTE con esta estructura JSON: "
+					+ "{\"tipo\":\"MANUALIDAD\",\"nombre\":\"...\",\"dificultad\":\"...\",\"tiempo_estimado\":\"...\","
+					+ "\"materiales\":[{\"nombre\":\"...\",\"cantidad\":\"...\"}],"
+					+ "\"pasos\":[\"paso 1 en una sola frase\",\"paso 2 en una sola frase\"]}. "
+					+ "REGLAS OBLIGATORIAS: "
+					+ "1. El campo tipo DEBE ser exactamente MANUALIDAD. "
+					+ "2. No incluyas ingredientes ni porciones. "
+					+ "3. No generes recetas de cocina bajo ninguna circunstancia. "
+					+ "4. Los pasos deben ser strings simples, NO objetos. Maximo 5 pasos. "
+					+ "Responde SOLO con JSON valido, sin markdown ni texto adicional. "
+					+ "Mensaje del usuario: " + prompt;
+		}
+
+		return "Eres un asistente experto UNICAMENTE en recetas de cocina. "
+				+ "El campo actual solo permite RECETAS DE COCINA. "
+				+ "Debes rechazar cualquier manualidad, decoracion, objeto, arreglo, arte o proyecto con materiales no comestibles. "
+				+ "Si la solicitud no es una receta de cocina valida, responde EXACTAMENTE: "
+				+ "{\"error\":\"" + error + "\"}. "
+				+ "Si es una receta valida, responde EXACTAMENTE con esta estructura JSON: "
+				+ "{\"tipo\":\"RECETA\",\"nombre\":\"...\",\"porciones\":" + porciones + ",\"tiempo_preparacion\":\"...\",\"dificultad\":\"...\","
 				+ "\"ingredientes\":[{\"nombre\":\"...\",\"cantidad\":\"...\"}],"
 				+ "\"pasos\":[\"paso 1 en una sola frase\",\"paso 2 en una sola frase\"]}. "
-				+ "REGLA OBLIGATORIA: el campo porciones DEBE ser exactamente " + porciones + ". "
-				+ "Las cantidades de TODOS los ingredientes deben estar calculadas para " + porciones + " personas. "
-				+ "Los pasos deben ser strings simples, NO objetos. Maximo 5 pasos. "
-				+ "Si es MANUALIDAD responde EXACTAMENTE con esta estructura: "
-				+ "{\"tipo\":\"MANUALIDAD\",\"nombre\":\"...\",\"dificultad\":\"...\",\"tiempo_estimado\":\"...\","
-				+ "\"materiales\":[{\"nombre\":\"...\",\"cantidad\":\"...\"}],"
-				+ "\"pasos\":[\"paso 1 en una sola frase\",\"paso 2 en una sola frase\"]}. "
+				+ "REGLAS OBLIGATORIAS: "
+				+ "1. El campo tipo DEBE ser exactamente RECETA. "
+				+ "2. El campo porciones DEBE ser exactamente " + porciones + ". "
+				+ "3. Las cantidades de TODOS los ingredientes deben estar calculadas para " + porciones + " personas. "
+				+ "4. No incluyas materiales ni tiempo_estimado. "
+				+ "5. No generes manualidades bajo ninguna circunstancia. "
+				+ "6. Los pasos deben ser strings simples, NO objetos. Maximo 5 pasos. "
+				+ "Responde SOLO con JSON valido, sin markdown ni texto adicional. "
 				+ "Mensaje del usuario: " + prompt;
 	}
 
 	/**
-	 * Construye el prompt para Google Gemini.
+	 * Construye el prompt para Google Gemini segun la categoria esperada.
 	 *
-	 * <p>Proporciona una plantilla JSON completa con el valor de porciones embebido
-	 * e instruye explícitamente que los ingredientes deben escalarse para ese número
-	 * de personas y que el campo tipo debe ser exactamente {@code "RECETA"} o
-	 * {@code "MANUALIDAD"}, corrigiendo el problema de texto extra y tipo incorrecto
-	 * en la respuesta.</p>
-	 *
-	 * @param prompt     descripción del plato o manualidad
-	 * @param tipoReceta tipo de receta (COCINA o MANUALIDAD)
-	 * @param porciones  número de porciones deseado
-	 * @return prompt listo para enviar a la API de Gemini
+	 * @param prompt descripcion escrita por el usuario
+	 * @param tipoReceta tipo de contenido esperado
+	 * @param porciones numero de porciones para recetas
+	 * @return prompt final para Gemini
 	 */
 	private String construirPromptGemini(String prompt, String tipoReceta, Integer porciones) {
-		return "Eres un chef casero experto en recetas rapidas y un experto en manualidades. "
-				+ "Detecta si el usuario pide una RECETA DE COCINA, una MANUALIDAD, o algo invalido. "
-				+ "Responde UNICAMENTE con el objeto JSON, sin ningun texto antes ni despues, sin markdown, sin bloques de codigo. "
-				+ "Si no tiene sentido responde SOLO con: {\"error\": \"Lo que escribiste no corresponde a una receta de cocina ni a una manualidad valida. Por favor intenta de nuevo.\"}. "
-				+ "Si es RECETA DE COCINA responde con EXACTAMENTE esta estructura JSON: "
-				+ "{\"tipo\":\"RECETA\",\"nombre\":\"nombre del plato\",\"porciones\":" + porciones + ",\"tiempo_preparacion\":\"X minutos\","
+		String categoria = categoriaEsperada(tipoReceta);
+		String error = mensajeErrorCategoria(tipoReceta);
+
+		if ("MANUALIDAD".equals(categoria)) {
+			return "Eres un experto exclusivamente en manualidades. "
+					+ "Este campo SOLO recibe MANUALIDADES. "
+					+ "Clasifica primero la solicitud del usuario. "
+					+ "Acepta solo proyectos manuales hechos con materiales: arte, decoracion, reciclaje, arreglos, objetos o actividades creativas. "
+					+ "Rechaza recetas de cocina, comidas, bebidas, postres, preparaciones comestibles o instrucciones para cocinar. "
+					+ "Si no es una manualidad valida, responde SOLO con: "
+					+ "{\"error\":\"" + error + "\"}. "
+					+ "Si es manualidad valida, responde con EXACTAMENTE esta estructura JSON: "
+					+ "{\"tipo\":\"MANUALIDAD\",\"nombre\":\"nombre\",\"dificultad\":\"Facil/Media/Dificil\",\"tiempo_estimado\":\"X minutos\","
+					+ "\"materiales\":[{\"nombre\":\"material\",\"cantidad\":\"cantidad\"}],"
+					+ "\"pasos\":[\"paso 1\",\"paso 2\"]}. "
+					+ "REGLAS OBLIGATORIAS: "
+					+ "1. El campo tipo DEBE ser exactamente MANUALIDAD. "
+					+ "2. No uses campos de receta como ingredientes, porciones o tiempo_preparacion. "
+					+ "3. No conviertas recetas en manualidades. "
+					+ "4. Maximo 5 pasos. "
+					+ "Responde UNICAMENTE con el objeto JSON, sin texto adicional, sin markdown, sin bloques de codigo. En espanol.\n\n"
+					+ "Solicitud del usuario: " + prompt;
+		}
+
+		return "Eres un chef experto exclusivamente en recetas de cocina. "
+				+ "Este campo SOLO recibe RECETAS DE COCINA. "
+				+ "Clasifica primero la solicitud del usuario. "
+				+ "Acepta solo preparaciones comestibles o bebidas con ingredientes y pasos de cocina. "
+				+ "Rechaza manualidades, decoraciones, objetos, arreglos, arte, reciclaje o proyectos con materiales no comestibles. "
+				+ "Si no es una receta de cocina valida, responde SOLO con: "
+				+ "{\"error\":\"" + error + "\"}. "
+				+ "Si es receta valida, responde con EXACTAMENTE esta estructura JSON: "
+				+ "{\"tipo\":\"RECETA\",\"nombre\":\"nombre del plato\",\"porciones\":" + porciones + ",\"tiempo_preparacion\":\"X minutos\",\"dificultad\":\"Facil/Media/Dificil\","
 				+ "\"ingredientes\":[{\"nombre\":\"ingrediente\",\"cantidad\":\"cantidad para " + porciones + " personas\"}],"
 				+ "\"pasos\":[\"paso 1\",\"paso 2\"]}. "
-				+ "REGLAS OBLIGATORIAS para RECETA: "
-				+ "1. El campo tipo DEBE ser exactamente la cadena RECETA. "
+				+ "REGLAS OBLIGATORIAS: "
+				+ "1. El campo tipo DEBE ser exactamente RECETA. "
 				+ "2. El campo porciones DEBE ser exactamente el numero " + porciones + ". "
 				+ "3. Todas las cantidades de ingredientes DEBEN estar calculadas para " + porciones + " personas. "
-				+ "Si es MANUALIDAD responde con EXACTAMENTE esta estructura JSON: "
-				+ "{\"tipo\":\"MANUALIDAD\",\"nombre\":\"nombre\",\"dificultad\":\"Facil/Media/Dificil\",\"tiempo_estimado\":\"X minutos\","
-				+ "\"materiales\":[{\"nombre\":\"material\",\"cantidad\":\"cantidad\"}],"
-				+ "\"pasos\":[\"paso 1\",\"paso 2\"]}. "
-				+ "REGLAS OBLIGATORIAS para MANUALIDAD: "
-				+ "1. El campo tipo DEBE ser exactamente la cadena MANUALIDAD. "
-				+ "Maximo 5 pasos en ambos casos. En espanol.\n\n"
-				+ "El usuario pide: " + prompt;
+				+ "4. No uses campos de manualidad como materiales o tiempo_estimado. "
+				+ "5. No conviertas manualidades en recetas. "
+				+ "6. Maximo 5 pasos. "
+				+ "Responde UNICAMENTE con el objeto JSON, sin texto adicional, sin markdown, sin bloques de codigo. En espanol.\n\n"
+				+ "Solicitud del usuario: " + prompt;
 	}
 }
